@@ -125,6 +125,44 @@ static void trial_course_pin(void) {
         }
     }
 }
+/* --plan COURSE:CHAR:BOARD:BOOST,...: the rider's learned book, one row per
+ * course. With `course=-2` the campaign picks its own course, so the trial
+ * cannot know in advance which setup it needs; the row for the course the race
+ * actually started on is applied at the race's init. Rows come from
+ * port/tools/nightmare_results.csv (`nightmare_search.py table`). */
+#define PLAN_MAX 12
+static struct { int course, chr, board, boost; } plan[PLAN_MAX];
+static int nplan;
+
+int sbk_plan_parse(const char *spec) {
+    const char *p = spec;
+    while (*p && nplan < PLAN_MAX) {
+        int c, ch, b, bo;
+        if (sscanf(p, "%d:%d:%d:%d", &c, &ch, &b, &bo) == 4) {
+            plan[nplan].course = c; plan[nplan].chr = ch;
+            plan[nplan].board = b; plan[nplan].boost = bo;
+            nplan++;
+        }
+        while (*p && *p != ',') p++;
+        while (*p == ',') p++;
+    }
+    printf("sbk: plan: %d course rows\n", nplan);
+    return nplan;
+}
+
+/* The plan row for a course, applied into the trial's own fields. */
+static void plan_apply(int course) {
+    int i;
+    for (i = 0; i < nplan; i++) {
+        if (plan[i].course != course) continue;
+        trial.chr = plan[i].chr;
+        trial.board = plan[i].board;
+        trial.boost = plan[i].boost;
+        printf("sbk: plan: course %d -> char=%d board=%d boost=%d\n", course, trial.chr, trial.board, trial.boost);
+        return;
+    }
+}
+
 static unsigned long trial_start, trial_frames;
 static int trial_money0, trial_done;
 
@@ -178,6 +216,7 @@ static void trial_arm(RacePlayer *p, unsigned long retraces) {
     trial_start = retraces;
     trial_money0 = p->money;
     trial_done = 0;
+    plan_apply(gRaceCourseIndex.signedValue);
     if (trial.chr >= 0) { p->selectedCharacterId = (u8)trial.chr; p->characterId = (u8)trial.chr; }
     if (trial.board >= 0) p->characterVariant = (u8)trial.board;
     trial_retune(p);

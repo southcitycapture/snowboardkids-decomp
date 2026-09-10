@@ -141,6 +141,30 @@ The boost column is not a difficulty dial: because player 1 is a CPU rider it
 is rank-handicapped like the rest of the field (see docs/PLAN.md), so a bigger
 boost can cost places. Course 3 goes 2nd, 4th, 1st at boost 0, 32, 64.
 
+## Playing the campaign: `--plan` and the driver
+
+`--trial course=-2` aims every race at the first course still unwon, but a
+single `--trial` spec cannot carry a different rider for each course.
+`--plan COURSE:CHAR:BOARD:BOOST,...` is the rider's book: at each race's init
+the port looks up the course the race actually started on and applies that row.
+`nightmare_search.py plan` prints the book straight out of the CSV, and
+`campaign` starts a session with it on the experiment Controller Pak
+(`/Users/zach/trial-pak.mpk` -- never the user's own save):
+
+    port/tools/nightmare_search.py campaign     # start the session
+    port/tools/nightmare_search.py drive 60     # walk it through the menus
+    port/tools/nightmare_search.py status       # the last sbk-status line
+
+`drive` is the autopilot: between races it feeds A presses through `--cmds`,
+and it stays quiet while a race is under way.
+
+**Never press START from the driver.** It is what `--soak`'s monkey does, and a
+START still queued when the next race begins *pauses* that race. Worse, the
+PAUSE / CONTINUE / QUIT / RETRY overlay does not answer A at all -- only
+another START dismisses it -- so the session sits on the overlay forever. The
+first Big Snowman run lost 20 minutes of game time to exactly this. `nudge`
+sends A and stick-up only.
+
 ## Fullscreen
 
 `--fullscreen` switches the display to its desktop mode and draws the N64

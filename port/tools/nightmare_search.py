@@ -217,6 +217,55 @@ def cmds(*lines):
                    input=text, text=True)
 
 
+def nudge(cycles=12):
+    """Feed the running game a batch of menu presses through --cmds: on demand,
+    so a campaign session can be walked from the results screen into the next
+    race without a monkey loose in the shop.
+
+    No START. --soak's monkey presses it, but a START that is still queued when
+    the next race starts *pauses* the race, and the campaign then sits on the
+    PAUSE / CONTINUE / QUIT / RETRY overlay forever (which is exactly what
+    happened on the first Big Snowman run). A alone confirms every prompt the
+    campaign meets, and stick-up picks YES."""
+    lines = []
+    for i in range(cycles):
+        lines += ["stick 0 80 3", "wait 6", "press A 3", "wait 45",
+                  "press A 3", "wait 45", "press A 3", "wait 45"]
+    cmds(*lines)
+    print("nudge: %d cycles queued" % cycles, flush=True)
+
+
+def racing():
+    """True while a race is under way (a trial start with no result yet).
+    The campaign must not press START during a race: it would pause it."""
+    out = g4("ssh", "grep -c 'sbk-trial: start' isle-log.txt; grep -c 'sbk-trial: result' isle-log.txt").stdout.split()
+    try:
+        return int(out[0]) > int(out[1])
+    except (IndexError, ValueError):
+        return False
+
+
+def drive(minutes=60):
+    """Campaign autopilot: keep the running session moving through the menus
+    between races and report the purse and the win flags as they change."""
+    end = time.time() + minutes * 60
+    last = None
+    while time.time() < end:
+        if not racing():
+            nudge(2)
+        time.sleep(20)
+        st = status()
+        key = (st.get("money"), st.get("won"), st.get("prog"))
+        if key != last:
+            last = key
+            print("money=%s save=%s prog=%s won=%s unlocks=%s"
+                  % (st.get("money"), st.get("savemoney"), st.get("prog"),
+                     st.get("won"), st.get("unlocks")), flush=True)
+        if st.get("won", "").count("1") >= 8:
+            print("every course won", flush=True)
+            return
+
+
 def status():
     """The last sbk-status line of the running game, as a dict."""
     out = g4("ssh", "grep 'sbk-status' isle-log.txt | tail -1").stdout.strip()
@@ -230,14 +279,29 @@ def status():
     return d
 
 
-def campaign_start(spec="course=-2,char=1,board=2", frames=4000000):
+def plan_arg():
+    """The rider's book as the port's --plan wants it: COURSE:CHAR:BOARD:BOOST
+    for every course that has a winning row in the CSV. With `course=-2` the
+    campaign picks its own course, so the port applies the matching row at the
+    race's init instead of the trial's fixed char/board."""
+    out = []
+    for c in COURSES:
+        r = best_row(c)
+        if r is not None and int(r["rank"]) == 1:
+            out.append("%s:%s:%s:%s" % (c, r["char"], r["board"], r["boost"] or 0))
+    return ",".join(out)
+
+
+def campaign_start(spec="course=-2", frames=4000000):
     """A long self-playing session on the experiment pak: the menu monkey keeps
     the game moving, every race is aimed at the first course still unwon, and
     --status prints the purse and the win flags as they change."""
     g4("stop")
-    g4("run", "--play", SCRIPT, "--headless", "--nightmare", "--soak", "--status",
-       "--cmds", CMDS, "--pak", PAK, "--trial", spec, "--frames", str(frames))
-    print("campaign started: spec=%s pak=%s" % (spec, PAK), flush=True)
+    plan = plan_arg()
+    g4("run", "--play", SCRIPT, "--turbo", "--nightmare", "--status",
+       "--cmds", CMDS, "--pak", PAK, "--trial", spec, "--plan", plan,
+       "--frames", str(frames))
+    print("campaign started: spec=%s plan=%s pak=%s" % (spec, plan, PAK), flush=True)
 
 
 COURSES = [9, 0, 1, 2, 3, 4, 5, 6]
@@ -257,8 +321,14 @@ if __name__ == "__main__":
     elif len(sys.argv) > 1 and sys.argv[1] == "record":
         for c in (sys.argv[2:] or COURSES):
             record(int(c))
+    elif len(sys.argv) > 1 and sys.argv[1] == "plan":
+        print(plan_arg())
     elif len(sys.argv) > 1 and sys.argv[1] == "campaign":
         campaign_start(*sys.argv[2:])
+    elif len(sys.argv) > 1 and sys.argv[1] == "drive":
+        drive(int(sys.argv[2]) if len(sys.argv) > 2 else 60)
+    elif len(sys.argv) > 1 and sys.argv[1] == "nudge":
+        nudge(int(sys.argv[2]) if len(sys.argv) > 2 else 12)
     elif len(sys.argv) > 1 and sys.argv[1] == "status":
         print(status())
     elif len(sys.argv) > 1 and sys.argv[1] == "regress":

@@ -68,7 +68,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0) {
             i++; /* option value */
         }
     }
@@ -161,6 +161,9 @@ int main(int argc, char **argv) {
             sbk_autoplay = 1;
         } else if (strcmp(argv[i], "--trial") == 0 && i + 1 < argc) {
             sbk_trial_parse(argv[++i]);
+        } else if (strcmp(argv[i], "--plan") == 0 && i + 1 < argc) {
+            extern int sbk_plan_parse(const char *);
+            sbk_plan_parse(argv[++i]);
         } else if (strcmp(argv[i], "--turbo") == 0) {
             sbk_turbo = 1;      /* no pacing: a retrace as soon as the game is idle */
         } else if (strcmp(argv[i], "--headless") == 0) {
@@ -187,7 +190,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
