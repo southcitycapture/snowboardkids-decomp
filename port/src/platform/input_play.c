@@ -78,47 +78,79 @@ static uint16_t parse_buttons(char *s) {
     return b;
 }
 
+static int cap;
+
+/* Parse one script line and append it; returns 0 if the line held no command. */
+static int add_line(char *line) {
+    char op[32], a1[128], a2[32], a3[32];
+    int n;
+    struct cmd c;
+    char *hash = strchr(line, '#');
+    if (hash != NULL) *hash = '\0';
+    n = sscanf(line, "%31s %127s %31s %31s", op, a1, a2, a3);
+    if (n < 1) return 0;
+    memset(&c, 0, sizeof(c));
+    if (strcasecmp(op, "wait") == 0 && n >= 2) {
+        c.op = C_WAIT; c.frames = atoi(a1);
+    } else if (strcasecmp(op, "press") == 0 && n >= 2) {
+        c.op = C_PRESS; c.buttons = parse_buttons(a1); c.frames = n >= 3 ? atoi(a2) : 1;
+    } else if (strcasecmp(op, "hold") == 0 && n >= 2) {
+        c.op = C_HOLD; c.buttons = parse_buttons(a1);
+    } else if (strcasecmp(op, "release") == 0 && n >= 2) {
+        c.op = C_RELEASE; c.buttons = parse_buttons(a1);
+    } else if (strcasecmp(op, "stick") == 0 && n >= 3) {
+        c.op = C_STICK; c.x = (int8_t)atoi(a1); c.y = (int8_t)atoi(a2); c.frames = n >= 4 ? atoi(a3) : -1;
+    } else {
+        fprintf(stderr, "sbk: input script: bad line: %s", line);
+        return 0;
+    }
+    if (script_len == cap) {
+        cap = cap ? cap * 2 : 64;
+        script = realloc(script, sizeof(*script) * cap);
+    }
+    script[script_len++] = c;
+    return 1;
+}
+
 static int load_script(const char *path) {
     FILE *f = fopen(path, "r");
     char line[256];
-    int cap = 64;
     if (f == NULL) {
         fprintf(stderr, "sbk: cannot open input script %s\n", path);
         return -1;
     }
-    script = malloc(sizeof(*script) * cap);
     while (fgets(line, sizeof(line), f) != NULL) {
-        char op[32], a1[128], a2[32], a3[32];
-        int n;
-        struct cmd c;
-        char *hash = strchr(line, '#');
-        if (hash != NULL) *hash = '\0';
-        n = sscanf(line, "%31s %127s %31s %31s", op, a1, a2, a3);
-        if (n < 1) continue;
-        memset(&c, 0, sizeof(c));
-        if (strcasecmp(op, "wait") == 0 && n >= 2) {
-            c.op = C_WAIT; c.frames = atoi(a1);
-        } else if (strcasecmp(op, "press") == 0 && n >= 2) {
-            c.op = C_PRESS; c.buttons = parse_buttons(a1); c.frames = n >= 3 ? atoi(a2) : 1;
-        } else if (strcasecmp(op, "hold") == 0 && n >= 2) {
-            c.op = C_HOLD; c.buttons = parse_buttons(a1);
-        } else if (strcasecmp(op, "release") == 0 && n >= 2) {
-            c.op = C_RELEASE; c.buttons = parse_buttons(a1);
-        } else if (strcasecmp(op, "stick") == 0 && n >= 3) {
-            c.op = C_STICK; c.x = (int8_t)atoi(a1); c.y = (int8_t)atoi(a2); c.frames = n >= 4 ? atoi(a3) : -1;
-        } else {
-            fprintf(stderr, "sbk: input script: bad line: %s", line);
-            continue;
-        }
-        if (script_len == cap) {
-            cap *= 2;
-            script = realloc(script, sizeof(*script) * cap);
-        }
-        script[script_len++] = c;
+        add_line(line);
     }
     fclose(f);
     printf("sbk: input script %s: %d commands\n", path, script_len);
     return 0;
+}
+
+/* --cmds FILE: whenever FILE appears, its lines are appended to the script
+ * and the file removed, so a session can be driven step by step from the
+ * host (write to a temp name, then rename into place). */
+static const char *cmdfile;
+
+void sbk_input_play_set_cmdfile(const char *path) {
+    cmdfile = path;
+    printf("sbk: live commands from %s\n", path);
+}
+
+void sbk_input_play_poll(void) {
+    FILE *f;
+    char line[256];
+    int added = 0;
+    if (cmdfile == NULL || (f = fopen(cmdfile, "r")) == NULL) return;
+    while (fgets(line, sizeof(line), f) != NULL) {
+        added += add_line(line);
+    }
+    fclose(f);
+    remove(cmdfile);
+    if (added) {
+        script_done = 0;
+        printf("sbk-play: read %u: +%d live commands\n", reads, added);
+    }
 }
 
 static int load_movie(const char *path) {

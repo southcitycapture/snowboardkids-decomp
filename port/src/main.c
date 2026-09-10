@@ -61,7 +61,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--peek") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0) {
             i++; /* option value */
         }
     }
@@ -130,6 +130,8 @@ int main(int argc, char **argv) {
             pak_path = argv[++i];
         } else if (strcmp(argv[i], "--peek") == 0 && i + 1 < argc) {
             sbk_peek_add(argv[++i]);
+        } else if (strcmp(argv[i], "--cmds") == 0 && i + 1 < argc) {
+            sbk_input_play_set_cmdfile(argv[++i]);
         } else if (strcmp(argv[i], "--racedbg") == 0) {
             sbk_race_debug_enabled = 1;
         } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
@@ -199,6 +201,7 @@ int main(int argc, char **argv) {
         }
 
         gfx_handle_events();
+        sbk_input_play_poll();
         sbk_input_update();
         sbk_vi_retrace();
         sbk_ai_retrace();

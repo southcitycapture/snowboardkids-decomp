@@ -30,22 +30,23 @@ press A 3
 wait 60
 stick 0 80 3
 wait 30
-press A 3          # YES
+press A 3          # YES -> Game Menu
+wait 200
+press DD 3
+wait 25
+press DD 3
+wait 25
+press DD 3
+wait 25
+press DD 3
+wait 25
+press A 3          # EXIT / SAVE
 wait 150
-stick 0 -80 3       # Game Menu: down to EXIT / SAVE
-wait 20
-stick 0 -80 3       # Game Menu: down to EXIT / SAVE
-wait 20
-stick 0 -80 3       # Game Menu: down to EXIT / SAVE
-wait 20
-stick 0 -80 3       # Game Menu: down to EXIT / SAVE
-wait 20
+stick 0 80 3
+wait 30
+press A 3          # YES if asked
+wait 150
 press A 3
 wait 150
 press A 3
-wait 150
-press A 3
-wait 150
-press A 3
-wait 150
 wait 900
