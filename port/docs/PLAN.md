@@ -138,6 +138,31 @@ session, so headless render tests do not need the console runner.
    progression level, the unlock states and the win flags; `course=-2` aims each
    race at the first course still unwon.
 
+6. **The rider learns the game** (2026-09-10 night). Every course the menu
+   offers (9 and 0-6) now has a setup the CPU rider takes first place with;
+   `port/tools/nightmare_search.py table` prints the book and
+   `port/scripts/golden/courseN.m64` is the recorded run for each, replayed by
+   `nightmare_search.py regress` (8 checked, 0 failed, every rank and frame
+   count identical). `--plan COURSE:CHAR:BOARD:BOOST,...` feeds the book to a
+   campaign session, which `--trial course=-2` aims at the first course still
+   unwon.
+
+   Campaign state as of the first driven session (experiment pak
+   `/Users/zach/trial-pak.mpk`, never the user's own save): Rookie Mountain and
+   Big Snowman won, 20,200G in the purse, six races run. Two things are still
+   open:
+
+   - **The purse is not saved yet.** The Controller Pak is written only from
+     the Game Menu's EXIT / SAVE, and the driver's A presses walk straight from
+     the results screen back into the next race without ever stopping on the
+     Game Menu, so `savemoney` stayed 0. The driver needs a way back (B out of
+     the course select, most likely) before any course can be bought.
+   - **A trial win does not always transfer.** Sunset Rock (course 1) is won by
+     char=3 board=2 at boost 0 from a fresh save, but the same setup came 3rd,
+     3rd, 3rd and 2nd in the campaign. The trial races a fresh save and the
+     campaign does not, so the book needs re-measuring *in campaign conditions*,
+     not just from the title screen.
+
 ## Build
 
     make ... (N64 build, once)        # map + linker script + assets

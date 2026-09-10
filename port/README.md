@@ -158,6 +158,13 @@ the port looks up the course the race actually started on and applies that row.
 `drive` is the autopilot: between races it feeds A presses through `--cmds`,
 and it stays quiet while a race is under way.
 
+First driven session (2026-09-10): Rookie Mountain and Big Snowman won,
+20,200G earned over six races. Not yet solved: the driver never stops on the
+Game Menu, so EXIT / SAVE never runs and nothing reaches the pak; and Sunset
+Rock, which the trial wins at boost 0, came 3rd three times and 2nd once under
+campaign conditions -- the book wants re-measuring from a played save rather
+than a fresh one. See docs/PLAN.md.
+
 **Never press START from the driver.** It is what `--soak`'s monkey does, and a
 START still queued when the next race begins *pauses* that race. Worse, the
 PAUSE / CONTINUE / QUIT / RETRY overlay does not answer A at all -- only
