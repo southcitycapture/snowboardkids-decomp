@@ -35,6 +35,10 @@ extern void sbk_ai_retrace(void);
 extern int sbk_hash_frames;
 extern unsigned sbk_last_frame_hash;
 extern unsigned sbk_stat_dma;
+extern int sbk_audio_muted;
+int sbk_ai_dump_start(const char *path);
+void sbk_ai_dump_finish(void);
+extern unsigned sbk_audio_peak;
 
 static double now_usec(void) {
     struct timeval tv;
@@ -50,7 +54,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0) {
             i++; /* option value */
         }
     }
@@ -105,11 +109,15 @@ int main(int argc, char **argv) {
             max_frames = strtoul(argv[++i], NULL, 10); /* quit after N retraces */
         } else if (strcmp(argv[i], "--hashframe") == 0) {
             sbk_hash_frames = 1; /* fingerprint every presented frame */
+        } else if (strcmp(argv[i], "--mute") == 0) {
+            sbk_audio_muted = 1;
+        } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
+            sbk_ai_dump_start(argv[++i]);
         }
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -175,9 +183,9 @@ int main(int argc, char **argv) {
         retraces++;
         if (retraces % 120 == 0) {
             extern unsigned sbk_stat_cont, sbk_task_count, sbk_stat_present;
-            printf("sbk: t=%lus retraces=%lu gfxtasks=%u presents=%u dma=%u contreads=%u swaps=%u pollfails=%u\n",
+            printf("sbk: t=%lus retraces=%lu gfxtasks=%u presents=%u dma=%u contreads=%u swaps=%u audiopeak=%u\n",
                    retraces / 60, retraces, sbk_task_count, sbk_stat_present, sbk_stat_dma, sbk_stat_cont,
-                   sbk_vi_swap_serial, sbk_poll_fail_count);
+                   sbk_vi_swap_serial, sbk_audio_peak);
         }
         next_retrace += RETRACE_USEC;
         if (t - next_retrace > 250000.0) {
@@ -197,6 +205,7 @@ int main(int argc, char **argv) {
         printf("sbk: last frame hash %08x (swap %u)\n", sbk_last_frame_hash, sbk_vi_swap_serial);
     }
     sbk_input_play_shutdown();
+    sbk_ai_dump_finish();
     sbk_audio_out_shutdown();
     SDL_Quit();
     return 0;

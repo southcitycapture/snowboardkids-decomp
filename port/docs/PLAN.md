@@ -69,6 +69,12 @@ session, so headless render tests do not need the console runner.
 2. **Menus + gameplay**: combiner coverage for everything the game draws,
    controller mapping, frame pacing, Controller Pak emulation (a 32 KB file).
 3. **Audio**: ABI 1 command-list interpreter feeding SDL audio at 22050 Hz.
+   DONE 2026-09-10: port/src/audio/audio_task.c runs the game's aspMain lists
+   on a host DMEM image (ADPCM, 4-tap resampler, per-sample envelope lanes,
+   mixer, reverb delay lines with the first-order low-pass, interleave).
+   `--wav OUT.wav` captures the AI stream, `--mute` queues silence instead.
+   Verified on the G4: title theme, START sweep and menu music; the frame
+   hash of the deterministic menu-walk run is unchanged.
 4. **Polish**: performance on the G4, fullscreen, gamepad, Rumble, save UX.
 
 ## Build
