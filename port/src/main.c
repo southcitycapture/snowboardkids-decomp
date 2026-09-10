@@ -27,6 +27,14 @@ extern struct GfxWindowManagerAPI gfx_sdl_gl13_wapi;
 extern struct GfxRenderingAPI gfx_gl13_rapi;
 
 #define RETRACE_USEC (1000000.0 / 60.0)
+/* The game thread polls three queues per loop pass; this many consecutive
+ * empty polls with nothing else runnable means the game is idle for the frame. */
+#define SBK_IDLE_POLLS 3
+
+extern void sbk_ai_retrace(void);
+extern int sbk_hash_frames;
+extern unsigned sbk_last_frame_hash;
+extern unsigned sbk_stat_dma;
 
 static double now_usec(void) {
     struct timeval tv;
@@ -42,7 +50,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0) {
             i++; /* option value */
         }
     }
@@ -75,6 +83,8 @@ int main(int argc, char **argv) {
     rom = find_rom(argc, argv);
     int fullscreen = 0;
     const char *play = NULL, *record = NULL;
+    unsigned long max_frames = 0;
+    unsigned last_dma = 0;
     double next_retrace;
     unsigned presented = 0;
     unsigned long retraces = 0;
@@ -91,6 +101,10 @@ int main(int argc, char **argv) {
             record = argv[++i];
         } else if (strcmp(argv[i], "--dumpdl") == 0 && i + 1 < argc) {
             sbk_dump_task = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            max_frames = strtoul(argv[++i], NULL, 10); /* quit after N retraces */
+        } else if (strcmp(argv[i], "--hashframe") == 0) {
+            sbk_hash_frames = 1; /* fingerprint every presented frame */
         }
     }
 
@@ -122,9 +136,16 @@ int main(int argc, char **argv) {
     printf("sbk: booting game (image at %p, RDRAM at 0x%08x)\n", (void *)main, SBK_RDRAM_BASE);
     sbk_game_main(NULL);
 
+    /* Determinism: a retrace is delivered only once the game has gone idle
+     * for the frame (nothing runnable but the polling game thread, which has
+     * come up empty SBK_IDLE_POLLS times). The wall clock only paces delivery;
+     * it never lands a retrace early or piles several onto a slow frame. Given
+     * the same inputs, every run then sees each retrace at the same point in
+     * its logic, which is what a movie needs. */
     next_retrace = now_usec();
     while (!sbk_input_quit_requested()) {
         double t;
+        int idle;
 
         sbk_sched_run();
 
@@ -133,39 +154,48 @@ int main(int argc, char **argv) {
             gfx_present();
         }
 
+        idle = !sbk_sched_has_runnable() || sbk_poll_fail_count >= SBK_IDLE_POLLS;
+        if (!idle) {
+            continue; /* the game still has work for this frame */
+        }
+
         t = now_usec();
-        if (t >= next_retrace) {
-            gfx_handle_events();
-            sbk_input_update();
-            sbk_vi_retrace();
-            retraces++;
-            if (retraces % 120 == 0) {
-                extern unsigned sbk_stat_dma, sbk_stat_cont, sbk_task_count, sbk_stat_present;
-                printf("sbk: t=%lus retraces=%lu gfxtasks=%u presents=%u dma=%u contreads=%u swaps=%u pollfails=%u\n",
-                       retraces / 60, retraces, sbk_task_count, sbk_stat_present, sbk_stat_dma, sbk_stat_cont,
-                       sbk_vi_swap_serial, sbk_poll_fail_count);
-            }
-            next_retrace += RETRACE_USEC;
-            if (t - next_retrace > 250000.0) {
-                next_retrace = t; /* fell far behind (debugger, window drag): resync */
-            }
-            continue;
-        }
-
-        if (sbk_sched_has_runnable() && sbk_poll_fail_count < 64) {
-            continue; /* real work pending */
-        }
-
-        /* Nothing to do until the next retrace. */
-        {
+        if (t < next_retrace) {
             double wait = next_retrace - t;
             if (wait > 2000.0) {
                 SDL_Delay((Uint32)((wait - 1000.0) / 1000.0));
             }
+            continue;
+        }
+
+        gfx_handle_events();
+        sbk_input_update();
+        sbk_vi_retrace();
+        sbk_ai_retrace();
+        retraces++;
+        if (retraces % 120 == 0) {
+            extern unsigned sbk_stat_cont, sbk_task_count, sbk_stat_present;
+            printf("sbk: t=%lus retraces=%lu gfxtasks=%u presents=%u dma=%u contreads=%u swaps=%u pollfails=%u\n",
+                   retraces / 60, retraces, sbk_task_count, sbk_stat_present, sbk_stat_dma, sbk_stat_cont,
+                   sbk_vi_swap_serial, sbk_poll_fail_count);
+        }
+        next_retrace += RETRACE_USEC;
+        if (t - next_retrace > 250000.0) {
+            next_retrace = t; /* fell far behind (slow frame, window drag): resync the pacing */
+        }
+        if (sbk_stat_dma != last_dma) {
+            last_dma = sbk_stat_dma;
+            printf("sbk: retrace %lu: dma=%u\n", retraces, last_dma); /* run-to-run fingerprint */
+        }
+        if (max_frames != 0 && retraces >= max_frames) {
+            break;
         }
     }
 
     printf("sbk: exiting after %lu retraces\n", retraces);
+    if (sbk_hash_frames) {
+        printf("sbk: last frame hash %08x (swap %u)\n", sbk_last_frame_hash, sbk_vi_swap_serial);
+    }
     sbk_input_play_shutdown();
     sbk_audio_out_shutdown();
     SDL_Quit();

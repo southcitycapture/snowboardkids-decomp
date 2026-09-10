@@ -7,6 +7,19 @@
 
 static u32 sbk_ai_freq = 22050;
 
+/* What the game sees through osAiGetLength must not depend on the real audio
+ * device: simulate the AI draining exactly rate/60 samples per retrace. */
+static u32 sbk_ai_sim_queued;
+static u32 sbk_ai_sim_frac; /* 16.16 leftover samples */
+
+void sbk_ai_retrace(void) {
+    u32 samples = (sbk_ai_freq << 16) / 60 + sbk_ai_sim_frac;
+    u32 whole = samples >> 16;
+    u32 bytes = whole * 4; /* 16-bit stereo */
+    sbk_ai_sim_frac = samples & 0xFFFF;
+    sbk_ai_sim_queued = sbk_ai_sim_queued > bytes ? sbk_ai_sim_queued - bytes : 0;
+}
+
 s32 osAiSetFrequency(u32 frequency) {
     sbk_ai_freq = frequency;
     sbk_audio_out_set_rate(frequency);
@@ -21,6 +34,7 @@ int sbk_audio_task_implemented = 0;
 s32 osAiSetNextBuffer(void *bufPtr, u32 size) {
     void *host = sbk_phys_to_host((u32)(uintptr_t)bufPtr); /* the game passes a physical address */
     size &= 0x3FFF8; /* AI_LEN_REG is 18 bits; the game's first request is uninitialised */
+    sbk_ai_sim_queued += size;
     if (!sbk_audio_task_implemented) {
         static u8 silence[8192];
         if (size > sizeof(silence)) {
@@ -34,7 +48,7 @@ s32 osAiSetNextBuffer(void *bufPtr, u32 size) {
 }
 
 u32 osAiGetLength(void) {
-    return sbk_audio_out_queued_bytes();
+    return sbk_ai_sim_queued;
 }
 
 u32 osAiGetStatus(void) {

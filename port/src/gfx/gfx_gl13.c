@@ -618,8 +618,24 @@ static void gl13_end_frame(void) {
 }
 
 int sbk_frame_dump_left; /* debug: dump the next N presented frames to /tmp/sbk-frame-N.ppm */
+int sbk_hash_frames;     /* --hashframe: FNV-1a of every presented frame, for determinism tests */
+unsigned sbk_last_frame_hash;
+
+static void hash_frame(void) {
+    static unsigned char *px;
+    unsigned h = 2166136261u;
+    size_t i, n = (size_t)640 * 480 * 3;
+    if (px == NULL) px = malloc(n);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, 640, 480, GL_RGB, GL_UNSIGNED_BYTE, px);
+    for (i = 0; i < n; i++) { h ^= px[i]; h *= 16777619u; }
+    sbk_last_frame_hash = h;
+}
 
 static void gl13_finish_render(void) {
+    if (sbk_hash_frames) {
+        hash_frame();
+    }
     if (sbk_frame_dump_left > 0) {
         static int index;
         GLint vp[4];

@@ -38,6 +38,7 @@ struct cmd {
 static struct cmd *script;
 static int script_len, script_pos, script_left;
 static uint16_t held, pressed;
+static unsigned reads;
 static int8_t stick_x, stick_y;
 static int stick_left = -1;
 static int script_done;
@@ -176,6 +177,7 @@ int sbk_input_record_start(const char *path) {
 /* Called once per controller read with the pad the game is about to see;
  * scripted input is merged in, the result recorded. */
 void sbk_input_play_step(uint16_t *buttons, int8_t *x, int8_t *y) {
+    reads++;
     if (movie != NULL) {
         if (movie_pos + 4 <= movie_len) {
             *buttons |= (uint16_t)((movie[movie_pos] << 8) | movie[movie_pos + 1]);
@@ -194,7 +196,7 @@ void sbk_input_play_step(uint16_t *buttons, int8_t *x, int8_t *y) {
             struct cmd *c = &script[script_pos++];
             switch (c->op) {
                 case C_WAIT: script_left = c->frames; break;
-                case C_PRESS: pressed = c->buttons; script_left = c->frames; break;
+                case C_PRESS: pressed = c->buttons; script_left = c->frames; printf("sbk-play: read %u: press %04x for %d\n", reads, pressed, c->frames); break;
                 case C_HOLD: held |= c->buttons; break;
                 case C_RELEASE: held &= (uint16_t)~c->buttons; break;
                 case C_STICK: stick_x = c->x; stick_y = c->y; stick_left = c->frames; break;
