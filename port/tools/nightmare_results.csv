@@ -24,3 +24,11 @@ spec,course,char,board,action,item,boost,rank,finished_before,frames,money,wall_
 "course=1,char=3,board=2",1,3,2,255,255,0,1,0,28002,0,42
 "course=2,char=3,board=2",2,3,2,255,255,0,3,2,21796,0,44
 "course=2,char=3,board=1",2,3,1,255,255,0,3,2,22106,0,36
+"course=2,char=1,board=2",2,1,2,255,255,0,1,0,22436,0,706
+"course=3,char=3,board=2",3,3,2,255,255,0,2,1,24978,0,249
+"course=3,char=3,board=1",3,3,1,255,255,0,2,1,24746,0,40
+"course=3,char=1,board=2",3,1,2,255,255,0,2,1,24366,0,40
+"course=3,char=4,board=1",3,4,1,255,255,0,4,3,23988,0,40
+"course=3,char=0,board=1",3,0,1,255,255,0,2,1,25170,0,40
+"course=3,char=1,board=2,boost=32",3,1,2,255,255,32,4,3,23520,0,40
+"course=3,char=1,board=2,boost=64",3,1,2,255,255,64,1,0,23018,0,34

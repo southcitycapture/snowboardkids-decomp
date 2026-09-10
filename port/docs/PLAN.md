@@ -119,6 +119,18 @@ session, so headless render tests do not need the console runner.
    picks which of the three option lists the menu offers and the game only ever
    raises it, so raising it from the port exposes 5 and 6 without the shop.
 
+   Why a bigger `boost` is not always better (the surprise of the sweep): the
+   trial's boost lands in `unk25C`, and `updateRacePlayer` rebuilds the frame's
+   target speed `unk310` from `unk25C` every frame -- but for a *CPU* rider it
+   then applies the rank handicap in `race_player_update.c` ~625-645:
+   `rankArrow == 1` (behind) adds 0x70000, `rankArrow == 2` (out in front)
+   divides the target by **three**, `rankArrow == 3` shaves 1/16th. Player 1 is
+   a CPU rider under `--autoplay`, so it is handicapped like any other: more top
+   speed takes the lead sooner and buys the /3 throttle sooner. Measured on
+   course 3 (Grass Valley), char=1 board=2: boost 0 -> 2nd in 24366 frames,
+   boost 32 -> **4th** in 23520, boost 64 -> 1st in 23018. The ladder has to be
+   searched, not extrapolated.
+
    Progression, from `initRaceStartTransition` (`cupPlacements` is the save's
    per-course "took first here" flag, index 0x18 of it *is* progressionLevel):
    level 1 needs wins on courses 0-4 and 9, level 2 adds 5, level 3 adds 6 and

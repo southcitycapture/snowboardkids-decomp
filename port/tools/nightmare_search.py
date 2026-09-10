@@ -203,6 +203,43 @@ def regress(courses=None):
     return fails
 
 
+# ----------------------------------------------------------------- campaign
+
+PAK = "/Users/zach/trial-pak.mpk"
+CMDS = "/Users/zach/cmds"
+
+
+def cmds(*lines):
+    """Feed script lines to a running game through --cmds (write, then mv, so
+    the game never reads a half-written file)."""
+    text = "".join(l + "\n" for l in lines)
+    subprocess.run([G4, "ssh", "cat > %s.tmp && mv %s.tmp %s" % (CMDS, CMDS, CMDS)],
+                   input=text, text=True)
+
+
+def status():
+    """The last sbk-status line of the running game, as a dict."""
+    out = g4("ssh", "grep 'sbk-status' isle-log.txt | tail -1").stdout.strip()
+    if not out:
+        return {}
+    d = {}
+    for kv in out.split()[1:]:
+        if "=" in kv:
+            k, v = kv.split("=", 1)
+            d[k] = v
+    return d
+
+
+def campaign_start(spec="course=-2,char=1,board=2", frames=4000000):
+    """A long self-playing session on the experiment pak: the menu monkey keeps
+    the game moving, every race is aimed at the first course still unwon, and
+    --status prints the purse and the win flags as they change."""
+    g4("stop")
+    g4("run", "--play", SCRIPT, "--headless", "--nightmare", "--soak", "--status",
+       "--cmds", CMDS, "--pak", PAK, "--trial", spec, "--frames", str(frames))
+    print("campaign started: spec=%s pak=%s" % (spec, PAK), flush=True)
+
+
 COURSES = [9, 0, 1, 2, 3, 4, 5, 6]
 # Course ids in the game's own order (from the asset table in include/assets.h).
 COURSE_NAMES = {0: "Big Snowman", 1: "Sunset Rock", 2: "Night Highway", 3: "Grass Valley",
@@ -220,6 +257,10 @@ if __name__ == "__main__":
     elif len(sys.argv) > 1 and sys.argv[1] == "record":
         for c in (sys.argv[2:] or COURSES):
             record(int(c))
+    elif len(sys.argv) > 1 and sys.argv[1] == "campaign":
+        campaign_start(*sys.argv[2:])
+    elif len(sys.argv) > 1 and sys.argv[1] == "status":
+        print(status())
     elif len(sys.argv) > 1 and sys.argv[1] == "regress":
         sys.exit(1 if regress([int(c) for c in sys.argv[2:]] or None) else 0)
     else:
