@@ -13,7 +13,10 @@ extern void sbk_audio_task(OSTask *task); /* port/src/audio/audio_task.c */
 static OSTask *sbk_sp_loaded;
 unsigned sbk_task_count;
 
+extern int sbk_headless;
+
 static void sbk_run_gfx(void *arg) {
+    if (sbk_headless) return;
     SBK_PERF_TIMED(SBK_PERF_GFX, sbk_gfx_task((OSTask *)arg));
 }
 

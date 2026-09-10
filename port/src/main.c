@@ -31,6 +31,10 @@ int sbk_pak_open(const char *path);
 #include "debug/perf.h"
 int sbk_peek_add(const char *spec);
 extern int sbk_autoplay, sbk_soak, sbk_nightmare;
+int sbk_trial_parse(const char *spec);
+int sbk_turbo, sbk_headless;
+static int quit_now;
+void sbk_request_quit_now(void) { quit_now = 1; }
 void sbk_autoplay_tick(unsigned long retraces);
 void sbk_race_debug(unsigned long retraces);
 extern struct GfxWindowManagerAPI gfx_sdl_gl13_wapi;
@@ -64,7 +68,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0) {
             i++; /* option value */
         }
     }
@@ -155,6 +159,14 @@ int main(int argc, char **argv) {
             sbk_input_play_set_cmdfile(argv[++i]);
         } else if (strcmp(argv[i], "--autoplay") == 0) {
             sbk_autoplay = 1;
+        } else if (strcmp(argv[i], "--trial") == 0 && i + 1 < argc) {
+            sbk_trial_parse(argv[++i]);
+        } else if (strcmp(argv[i], "--turbo") == 0) {
+            sbk_turbo = 1;      /* no pacing: a retrace as soon as the game is idle */
+        } else if (strcmp(argv[i], "--headless") == 0) {
+            sbk_headless = 1;   /* skip display lists and presents; implies --turbo and --mute */
+            sbk_turbo = 1;
+            sbk_audio_muted = 1;
         } else if (strcmp(argv[i], "--nightmare") == 0) {
             sbk_nightmare = 1;
         } else if (strcmp(argv[i], "--soak") == 0) {
@@ -169,7 +181,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -227,7 +239,8 @@ int main(int argc, char **argv) {
         }
 
         t = now_usec();
-        if (t < next_retrace) {
+        if (quit_now) break;
+        if (!sbk_turbo && t < next_retrace) {
             double wait = next_retrace - t;
             if (wait > 2000.0) {
                 SDL_Delay((Uint32)((wait - 1000.0) / 1000.0));
@@ -243,7 +256,7 @@ int main(int argc, char **argv) {
         sbk_ai_retrace();
         retraces++;
         sbk_perf_frame();
-        if (sbk_autoplay || sbk_soak || sbk_nightmare) sbk_autoplay_tick(retraces);
+        sbk_autoplay_tick(retraces);
         if (sbk_perf_enabled && retraces % 60 == 0) {
             sbk_perf_report();
         }

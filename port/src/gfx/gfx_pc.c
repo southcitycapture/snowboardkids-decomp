@@ -1965,6 +1965,8 @@ void gfx_run(Gfx *commands) {
 unsigned sbk_stat_present;
 
 void gfx_present(void) {
+    extern int sbk_headless;
+    if (sbk_headless) { sbk_stat_present++; return; }
     if (!frame_open) {
         return;
     }
