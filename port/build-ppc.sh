@@ -11,7 +11,7 @@
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
-SDL2_PREFIX=${SDL2_PREFIX:-$HOME/Apps/panther-sdl2/build-tiger/prefix}
+SDL2_PREFIX=${SDL2_PREFIX:-$HOME/Apps/panther-sdl2/build-tiger-joy/prefix}  # joystick+haptic build (isle-ppc-tools/tiger/build-sdl2-tiger-joy.sh)
 IMAGE=${IMAGE:-ghcr.io/variantxyz/gcc-powerpc-apple-darwin8:build-gcc-14.2-MacOSXSDK10.4u}
 
 [ -d "$SDL2_PREFIX/include/SDL2" ] || { echo "no SDL2 prefix at $SDL2_PREFIX (see isle-ppc-tools/tiger/build-sdl2-tiger.sh)" >&2; exit 1; }

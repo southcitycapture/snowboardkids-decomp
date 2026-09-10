@@ -22,7 +22,8 @@ ifeq ($(TARGET),ppc-darwin)
   TARGET_LDFLAGS := -isysroot $(SYSROOT) -mmacosx-version-min=10.4 -Wl,-pagezero_size,0x10000000 \
                     -framework OpenGL -framework Cocoa -framework Carbon -framework IOKit \
                     -framework CoreAudio -framework AudioUnit -framework AudioToolbox \
-                    -framework CoreFoundation -framework ForceFeedback -liconv -static-libgcc
+                    -framework CoreFoundation -framework ForceFeedback -liconv -static-libgcc \
+                    -Wl,-undefined,dynamic_lookup  # IOHIDManager (10.5) symbols are not in the 10.4u SDK stubs
   SYM_PREFIX := _
   CTX_ASM    := src/ultra/sbk_ctx_ppc_darwin.s
   EXE        := $(BUILD)/snowboardkids
