@@ -26,6 +26,8 @@ extern int sbk_dump_task;
 extern int sbk_dump_frames;
 extern int sbk_dump_tris;
 extern int sbk_audio_disabled;
+extern int sbk_race_debug_enabled;
+void sbk_race_debug(unsigned long retraces);
 extern struct GfxWindowManagerAPI gfx_sdl_gl13_wapi;
 extern struct GfxRenderingAPI gfx_gl13_rapi;
 
@@ -121,6 +123,8 @@ int main(int argc, char **argv) {
             sbk_audio_disabled = 1; /* skip the command-list interpreter entirely */
         } else if (strcmp(argv[i], "--dumptris") == 0) {
             sbk_dump_tris = 1;
+        } else if (strcmp(argv[i], "--racedbg") == 0) {
+            sbk_race_debug_enabled = 1;
         } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
             sbk_ai_dump_start(argv[++i]);
         }
@@ -191,6 +195,9 @@ int main(int argc, char **argv) {
         sbk_vi_retrace();
         sbk_ai_retrace();
         retraces++;
+        if (sbk_race_debug_enabled && retraces % 60 == 0) {
+            sbk_race_debug(retraces);
+        }
         if (retraces % 120 == 0) {
             extern unsigned sbk_stat_cont, sbk_task_count, sbk_stat_present;
             printf("sbk: t=%lus retraces=%lu gfxtasks=%u presents=%u dma=%u contreads=%u swaps=%u audiopeak=%u\n",

@@ -1,0 +1,314 @@
+# Title -> mode select (as menu-walk), then through the pak prompts toward a race.
+wait 240
+press START 3
+wait 150
+press A 3
+wait 90
+press A 3
+wait 90
+press A 3
+wait 90
+press START 3
+wait 90
+press A 3
+wait 90
+stick 80 0 10
+wait 30
+press A 3
+wait 150
+press A 3          # 1 PLAYER
+wait 150
+press A 3          # slot select
+wait 150
+press A 3          # no controller pak found -> start game
+wait 150
+press A 3          # insert-ack / summary / confirm
+wait 60
+stick 0 80 3       # up = YES on "IS THIS OK?"
+wait 30
+press A 3
+wait 60
+stick 0 80 3
+wait 30
+press A 3          # insert-ack / summary / confirm
+wait 60
+stick 0 80 3       # up = YES on "IS THIS OK?"
+wait 30
+press A 3
+wait 60
+stick 0 80 3
+wait 30
+press A 3          # insert-ack / summary / confirm
+wait 60
+stick 0 80 3       # up = YES on "IS THIS OK?"
+wait 30
+press A 3
+wait 60
+stick 0 80 3
+wait 30
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+press A 3
+wait 150
+wait 240
+stick 0 80
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
+press A 3
+wait 45
