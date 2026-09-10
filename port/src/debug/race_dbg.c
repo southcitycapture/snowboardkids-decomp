@@ -6,6 +6,9 @@
 #include <string.h>
 #include "game/race/player/race_player_input.h"
 #include "game/race/player/race_player_update.h"
+#include "game/race/race_state.h"
+#include "game/engine/game_task_scheduler.h"
+#include "game/menu/character_select/character_select_course_menu.h"
 #include "../platform/input.h"
 extern u8 gRaceDemoPlaybackEnabled;
 #define RACE_PLAYER_READY_FLAG 0x40 /* race_flow.c: the rider has finished */
@@ -20,7 +23,90 @@ int sbk_nightmare;
  * inits with them; during the race the chances are pinned and `boost` (in
  * 1/256ths) is added to the speed limit every retrace. When player 1
  * finishes, one result line is printed; with quit=1 the process exits. */
-static struct { int on, chr, board, action, item, boost, quit; } trial = { 0, -1, -1, -1, -1, 0, 0 };
+static struct { int on, chr, board, action, item, boost, quit, course, money; } trial = { 0, -1, -1, -1, -1, 0, 0, -1, -1 };
+
+/* The character-select course list: the menu keeps a *cursor index* into this
+ * option table in gRaceCourseIndex and only converts it to the real course id
+ * when the menu fades out (fadeOutCharacterSelectCourseMenu). So `course=N`
+ * moves the cursor onto N every frame the course menu is up and lets the
+ * script's own A press confirm it -- the normal flow, just aimed. */
+typedef s16 CharacterSelectOptionList[10];
+extern CharacterSelectOptionList *gCharacterSelectActiveCourseOptions;
+extern u8 gHighestUnlockedCourse;
+void updateCharacterSelectCourseMenu(void);
+void updateCharacterSelectCourseSubmenu(void);
+void handleCharacterSelectCourseSelection(void);
+
+static int trial_course_seen;
+
+/* Aiming the course menu.
+ *
+ * The character-select course menu keeps a *cursor index* into
+ * gCharacterSelectActiveCourseOptions in gRaceCourseIndex and only converts it
+ * to the real course id when the menu fades out. So `course=N` parks the cursor
+ * on N for as long as the list is live and lets the script's own A press
+ * confirm it: the game's normal flow, just aimed.
+ *
+ * Identifying "the list is live" from outside: gCurrentGameTask is NULL between
+ * dispatches, and gRacePlayers[0].isActive is 1 in the menus too, so neither is
+ * usable. What works is the menu's own state -- gRacePlayers[0].menuState is 0
+ * while the list is navigable and >= 7 once a choice is confirmed, and
+ * gCharacterSelectCourseCursorState.listCursorState is zeroed by the menu's
+ * init. Arm on (cursorState == 0 && menuState == 0), disarm on menuState >= 7.
+ */
+static int course_pin_armed;
+
+/* --coursetrace: one line whenever the course index or the course menu's state
+ * changes, which is how the menu's shape above was established. */
+int sbk_course_trace;
+
+static void course_trace(unsigned long retraces) {
+    static int last = -12345, lastcur = -1, lastms = -1;
+    if (!sbk_course_trace) return;
+    if (gRaceCourseIndex.signedValue != last || gCharacterSelectCourseCursorState.listCursorState != lastcur ||
+        gRacePlayers[0].menuState != lastms) {
+        const s16 *o = (const s16 *)gCharacterSelectActiveCourseOptions;
+        last = gRaceCourseIndex.signedValue;
+        lastcur = gCharacterSelectCourseCursorState.listCursorState;
+        lastms = gRacePlayers[0].menuState;
+        printf("sbk-course: r=%lu idx=%d cur=%d ms=%d act=%d unlock=%d opts=%p [%d %d %d %d %d %d %d %d]\n",
+               retraces, last, lastcur, lastms, gRacePlayers[0].isActive, gHighestUnlockedCourse, (void *)o,
+               o ? o[0] : -9, o ? o[1] : -9, o ? o[2] : -9, o ? o[3] : -9,
+               o ? o[4] : -9, o ? o[5] : -9, o ? o[6] : -9, o ? o[7] : -9);
+        fflush(stdout);
+    }
+}
+
+static void trial_course_pin(void) {
+    const s16 *opt = (const s16 *)gCharacterSelectActiveCourseOptions;
+    int ms = gRacePlayers[0].menuState;
+    int i;
+    if (trial.course < 0) return;
+    /* The list the menu offers is picked at its init from gHighestUnlockedCourse
+     * (0 -> courses 9,0-4; 1 -> +5; 2 -> +6). The game only ever raises it, so
+     * raising it here, every frame, exposes every course to the trial. */
+    if (gHighestUnlockedCourse < 2) gHighestUnlockedCourse = 2;
+    if (opt == NULL) return;
+    if (ms != 0) {
+        if (ms >= 7) course_pin_armed = 0; /* confirmed: the index is a course id now */
+        return;
+    }
+    if (gCharacterSelectCourseCursorState.listCursorState == 0) course_pin_armed = 1;
+    if (!course_pin_armed) return;
+    for (i = 0; i < 10 && opt[i] != -1; i++) {
+        if (opt[i] == trial.course) {
+            if (gRaceCourseIndex.signedValue != i) {
+                gRaceCourseIndex.signedValue = (s16)i;
+                if (!trial_course_seen) {
+                    trial_course_seen = 1;
+                    printf("sbk-trial: course menu: cursor -> %d (course %d)\n", i, trial.course);
+                    fflush(stdout);
+                }
+            }
+            return;
+        }
+    }
+}
 static unsigned long trial_start, trial_frames;
 static int trial_money0, trial_done;
 
@@ -36,6 +122,8 @@ int sbk_trial_parse(const char *spec) {
             else if (!strcmp(key, "item")) trial.item = val;
             else if (!strcmp(key, "boost")) trial.boost = val;
             else if (!strcmp(key, "quit")) trial.quit = val;
+            else if (!strcmp(key, "course")) trial.course = val;
+            else if (!strcmp(key, "money")) trial.money = val;
         }
         while (*p && *p != ' ' && *p != ',') p++;
         while (*p == ' ' || *p == ',') p++;
@@ -75,12 +163,15 @@ static void trial_arm(RacePlayer *p, unsigned long retraces) {
     if (trial.chr >= 0) { p->selectedCharacterId = (u8)trial.chr; p->characterId = (u8)trial.chr; }
     if (trial.board >= 0) p->characterVariant = (u8)trial.board;
     trial_retune(p);
-    printf("sbk-trial: start r=%lu char=%d board=%d top=%d\n", retraces, p->characterId, p->characterVariant, p->unk25C);
+    if (trial.money >= 0) p->money = trial.money;
+    printf("sbk-trial: start r=%lu course=%d char=%d board=%d top=%d money=%d\n", retraces,
+           gRaceCourseIndex.signedValue, p->characterId, p->characterVariant, p->unk25C, p->money);
 }
 
 static void trial_tick(unsigned long retraces) {
     RacePlayer *p = &gRacePlayers[0];
     if (!trial.on) return;
+    trial_course_pin(); /* the menus run with isActive still set, so aim first */
     if (!p->isActive) {
         trial_start = 0;
         return;
@@ -95,8 +186,8 @@ static void trial_tick(unsigned long retraces) {
         for (i = 1; i < RACE_PLAYER_COUNT; i++) {
             if (gRacePlayers[i].isActive && (gRacePlayers[i].stateFlags & RACE_PLAYER_READY_FLAG)) ahead++;
         }
-        printf("sbk-trial: result char=%d board=%d action=%d item=%d boost=%d rank=%d finished_before=%d frames=%lu money=%d\n",
-               p->characterId, p->characterVariant, p->actionTriggerChance, p->itemTriggerChance, trial.boost,
+        printf("sbk-trial: result course=%d char=%d board=%d action=%d item=%d boost=%d rank=%d finished_before=%d frames=%lu money=%d\n",
+               gRaceCourseIndex.signedValue, p->characterId, p->characterVariant, p->actionTriggerChance, p->itemTriggerChance, trial.boost,
                p->rankIndex + 1, ahead, trial_frames, p->money - trial_money0);
         fflush(stdout);
         if (trial.quit) {
@@ -108,6 +199,7 @@ static void trial_tick(unsigned long retraces) {
 
 void sbk_autoplay_tick(unsigned long retraces) {
     static unsigned soak_step;
+    course_trace(retraces);
     trial_tick(retraces);
     if (gRacePlayers[0].isActive) {
         if (sbk_nightmare) {

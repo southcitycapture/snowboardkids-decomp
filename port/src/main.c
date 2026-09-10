@@ -167,6 +167,9 @@ int main(int argc, char **argv) {
             sbk_headless = 1;   /* skip display lists and presents; implies --turbo and --mute */
             sbk_turbo = 1;
             sbk_audio_muted = 1;
+        } else if (strcmp(argv[i], "--coursetrace") == 0) {
+            extern int sbk_course_trace;
+            sbk_course_trace = 1;
         } else if (strcmp(argv[i], "--nightmare") == 0) {
             sbk_nightmare = 1;
         } else if (strcmp(argv[i], "--soak") == 0) {
