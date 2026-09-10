@@ -12,4 +12,10 @@ void sbk_input_read_pad(int port, uint16_t *buttons, int8_t *stick_x, int8_t *st
 void sbk_input_update(void);
 int sbk_input_quit_requested(void);
 
+/* Scripted input (input_play.c): a text script or an .m64 movie, and recording. */
+int sbk_input_play_load(const char *path);
+int sbk_input_record_start(const char *path);
+void sbk_input_play_step(uint16_t *buttons, int8_t *x, int8_t *y);
+void sbk_input_play_shutdown(void);
+
 #endif

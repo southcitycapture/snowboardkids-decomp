@@ -381,8 +381,32 @@ static uint32_t next_pot(uint32_t v) {
     return p;
 }
 
+int sbk_tex_dump_left; /* debug: dump the next N uploaded textures to /tmp/sbk-tex-N.ppm */
+static int sbk_tex_dump_index;
+
+static void dump_texture_ppm(const uint8_t *rgba, int w, int h) {
+    char name[64];
+    FILE *f;
+    int i;
+    snprintf(name, sizeof(name), "/tmp/sbk-tex-%02d.ppm", sbk_tex_dump_index++);
+    f = fopen(name, "wb");
+    if (f == NULL) return;
+    fprintf(f, "P6\n%d %d\n255\n", w, h);
+    for (i = 0; i < w * h; i++) {
+        /* alpha shown as magenta */
+        if (rgba[i * 4 + 3] == 0) { fputc(255, f); fputc(0, f); fputc(255, f); }
+        else fwrite(rgba + i * 4, 1, 3, f);
+    }
+    fclose(f);
+    printf("sbk-tex: %s %dx%d\n", name, w, h);
+}
+
 static void gl13_upload_texture(const uint8_t *rgba32_buf, int width, int height) {
     uint32_t pw = next_pot((uint32_t)width), ph = next_pot((uint32_t)height);
+    if (sbk_tex_dump_left > 0) {
+        sbk_tex_dump_left--;
+        dump_texture_ppm(rgba32_buf, width, height);
+    }
     /* selected texture unit is left at the tile by select_texture's caller order:
      * gfx_pc calls select_texture(tile) then upload_texture, so rebind here. */
     if (pw != (uint32_t)width || ph != (uint32_t)height) {
@@ -593,7 +617,32 @@ static void gl13_start_frame(void) {
 static void gl13_end_frame(void) {
 }
 
+int sbk_frame_dump_left; /* debug: dump the next N presented frames to /tmp/sbk-frame-N.ppm */
+
 static void gl13_finish_render(void) {
+    if (sbk_frame_dump_left > 0) {
+        static int index;
+        GLint vp[4];
+        int w, h, y;
+        unsigned char *px;
+        char name[64];
+        FILE *f;
+        sbk_frame_dump_left--;
+        glGetIntegerv(GL_VIEWPORT, vp);
+        w = 640; h = 480; /* window size: viewport may be a sub-rectangle */
+        px = malloc((size_t)w * h * 3);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px);
+        snprintf(name, sizeof(name), "/tmp/sbk-frame-%02d.ppm", index++);
+        f = fopen(name, "wb");
+        if (f != NULL) {
+            fprintf(f, "P6\n%d %d\n255\n", w, h);
+            for (y = h - 1; y >= 0; y--) fwrite(px + (size_t)y * w * 3, 1, (size_t)w * 3, f);
+            fclose(f);
+            printf("sbk-frame: %s (viewport %d,%d %dx%d)\n", name, vp[0], vp[1], vp[2], vp[3]);
+        }
+        free(px);
+    }
 }
 
 static void gl13_clear(bool color, float r, float g, float b, bool depth) {

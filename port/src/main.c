@@ -22,6 +22,7 @@
 extern void sbk_game_main(void *arg);
 extern int sbk_rom_load(const char *path);
 extern int sbk_trace;
+extern int sbk_dump_task;
 extern struct GfxWindowManagerAPI gfx_sdl_gl13_wapi;
 extern struct GfxRenderingAPI gfx_gl13_rapi;
 
@@ -40,6 +41,9 @@ static const char *find_rom(int argc, char **argv) {
     for (i = 1; i < argc; i++) {
         if (argv[i][0] != '-') {
             return argv[i];
+        }
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0) {
+            i++; /* option value */
         }
     }
     for (i = 0; candidates[i] != NULL; i++) {
@@ -70,6 +74,7 @@ int main(int argc, char **argv) {
     setvbuf(stderr, NULL, _IONBF, 0);
     rom = find_rom(argc, argv);
     int fullscreen = 0;
+    const char *play = NULL, *record = NULL;
     double next_retrace;
     unsigned presented = 0;
     unsigned long retraces = 0;
@@ -80,11 +85,17 @@ int main(int argc, char **argv) {
             fullscreen = 1;
         } else if (strcmp(argv[i], "--trace") == 0) {
             sbk_trace = 1;
+        } else if (strcmp(argv[i], "--play") == 0 && i + 1 < argc) {
+            play = argv[++i];
+        } else if (strcmp(argv[i], "--record") == 0 && i + 1 < argc) {
+            record = argv[++i];
+        } else if (strcmp(argv[i], "--dumpdl") == 0 && i + 1 < argc) {
+            sbk_dump_task = atoi(argv[++i]);
         }
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -99,6 +110,12 @@ int main(int argc, char **argv) {
     }
     gfx_init(&gfx_sdl_gl13_wapi, &gfx_gl13_rapi, "Snowboard Kids", fullscreen != 0);
     sbk_input_init();
+    if (play != NULL && sbk_input_play_load(play) != 0) {
+        return 1;
+    }
+    if (record != NULL && sbk_input_record_start(record) != 0) {
+        return 1;
+    }
     sbk_audio_out_init();
 
     /* Boot: the game creates its boot thread and starts it. */
@@ -149,6 +166,7 @@ int main(int argc, char **argv) {
     }
 
     printf("sbk: exiting after %lu retraces\n", retraces);
+    sbk_input_play_shutdown();
     sbk_audio_out_shutdown();
     SDL_Quit();
     return 0;

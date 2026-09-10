@@ -130,9 +130,13 @@ $(BUILD)/pins.o: $(PINS_S)
 $(BUILD)/pin_table.o: $(PIN_TABLE) src/ultra/sbk_pins.h
 	$(CC) $(PORT_CFLAGS) -c -o $@ $<
 
-$(GEN)/%.c: $(ROOT)/%.c tools/mirror_src.py $(PINS_TXT)
+# The game's string literals use its own character encoding: upstream converts
+# them with tools/textconv.py before compiling, and so must we.
+$(GEN)/%.c: $(ROOT)/%.c tools/mirror_src.py $(PINS_TXT) $(ROOT)/tools/textconv.py $(ROOT)/tools/charmap.txt
 	@mkdir -p $(dir $@)
-	@$(PYTHON) tools/mirror_src.py --pins $(PINS_TXT) $< $@
+	@$(PYTHON) $(ROOT)/tools/textconv.py $(ROOT)/tools/charmap.txt $< $@.tc
+	@$(PYTHON) tools/mirror_src.py --pins $(PINS_TXT) $@.tc $@
+	@rm -f $@.tc
 
 # Included fragments (.inc.c, libmus command files) are pulled in by the
 # main file's #include; mirror them too so the include finds the filtered copy.

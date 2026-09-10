@@ -1,0 +1,8 @@
+# Let the title demo play, then press Start and poke through whatever prompts follow.
+wait 240          # ~8 s at 30 reads/s
+press START 3
+wait 120
+press START 3
+wait 90
+press A 3
+wait 90

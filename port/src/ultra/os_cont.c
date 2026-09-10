@@ -60,6 +60,9 @@ s32 osContStartReadData(OSMesgQueue *mq) {
     for (i = 0; i < MAXCONTROLLERS; i++) {
         if (sbk_cont_status[i].errno == 0) {
             sbk_input_read_pad(i, &sbk_cont_pad[i].button, &sbk_cont_pad[i].stick_x, &sbk_cont_pad[i].stick_y);
+            if (i == 0) {
+                sbk_input_play_step(&sbk_cont_pad[i].button, &sbk_cont_pad[i].stick_x, &sbk_cont_pad[i].stick_y);
+            }
             sbk_cont_pad[i].errno = 0;
         } else {
             sbk_cont_pad[i].button = 0;
