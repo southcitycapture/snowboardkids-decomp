@@ -87,6 +87,27 @@ ending credits.
 
     port/tools/nightmare_search.py run course=0,char=1,board=2
     port/tools/nightmare_search.py sweep 0 1 2 3 4 5 6
+    port/tools/nightmare_search.py table       # best setup per course so far
+    port/tools/nightmare_search.py record 0    # re-run the winner with --record
+    port/tools/nightmare_search.py regress     # replay the golden movies
+
+A trial that has not printed a result after 300 s is hung (a healthy one costs
+30-60 s of wall clock); the sweep stops it and carries on rather than blocking.
+
+### Golden movies and `regress`
+
+`record N` replays the best winning row for course N once more with
+`--record /Users/zach/golden-courseN.m64` and copies the movie into
+`port/scripts/golden/courseN.m64`. Because the rider is the game's *own* CPU
+logic, the movie holds the menu walk, not the driving: the race is reproduced by
+replaying the movie under the same `--trial` spec, which is what `regress` does.
+
+    port/tools/nightmare_search.py regress        # every recorded course
+    port/tools/nightmare_search.py regress 0 2    # just these
+
+It prints a pass/fail table: a course passes when the replay finishes with the
+same rank *and* the same frame count as the CSV row it was measured from. The
+port is deterministic under scripted input, so any drift is a real regression.
 
 ## Fullscreen
 
