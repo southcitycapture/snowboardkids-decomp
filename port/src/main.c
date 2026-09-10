@@ -167,6 +167,9 @@ int main(int argc, char **argv) {
             sbk_headless = 1;   /* skip display lists and presents; implies --turbo and --mute */
             sbk_turbo = 1;
             sbk_audio_muted = 1;
+        } else if (strcmp(argv[i], "--status") == 0) {
+            extern int sbk_status;
+            sbk_status = 1;
         } else if (strcmp(argv[i], "--coursetrace") == 0) {
             extern int sbk_course_trace;
             sbk_course_trace = 1;
@@ -184,7 +187,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);

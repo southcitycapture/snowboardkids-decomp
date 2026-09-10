@@ -34,7 +34,8 @@ end on the same frame hash (`--frames N --hashframe`).
                   [--frames N] [--hashframe] [--mute] [--noaudio] [--wav OUT.wav]
                   [--pak FILE.mpk] [--cmds FILE] [--trace] [--dumpdl N] [--dumpframes N]
                   [--dumptris] [--racedbg] [--peek ADDR:LEN] [--perf]
-                  [--autoplay] [--soak] [--nightmare] [rom.z64]
+                  [--autoplay] [--soak] [--nightmare] [--trial SPEC]
+                  [--status] [--coursetrace] [rom.z64]
 
 Scripts in `scripts/`: `title-start.txt`, `menu-walk.txt` (to mode select),
 `race-walk.txt` (through the pak prompts into a race), `race-drive.txt`
@@ -51,6 +52,41 @@ every CPU rider's item and trick chance to the maximum. `--perf` prints a
 per-second line (and puts it in the window title) with the time spent in
 game logic, display lists, audio, present and idle, the worst frame, and
 triangle / draw / texture-upload counts. `g4 top` shows the machine's load.
+
+## Making the CPU rider win: `--trial`
+
+`--trial course=N,char=N,board=N,action=N,item=N,boost=N,money=N,quit=1` runs
+one measured race. At the race's own init (after the game's tuning) player 1 is
+re-tuned from the character and board tables with `boost` added to its top
+speed in 1/256ths, the item and trick chances are pinned for the whole race,
+and one line is printed when player 1 crosses the line:
+
+    sbk-trial: result course=9 char=3 board=2 action=255 item=255 boost=64 \
+               rank=1 finished_before=0 frames=13124 money=0
+
+`course=N` aims the character-select course menu. That menu keeps a *cursor
+index* into `gCharacterSelectActiveCourseOptions` in `gRaceCourseIndex` and
+only converts it to a real course id when it fades out, so the trial parks the
+cursor on the wanted course while the list is live and lets the script's own A
+press confirm it. Identifying "the list is live" from the port needed
+measuring: `gCurrentGameTask` is NULL between dispatches and
+`gRacePlayers[0].isActive` is 1 in the menus too, so the tell is
+`gRacePlayers[0].menuState == 0` plus the list cursor state (`--coursetrace`
+prints both). Raising `gHighestUnlockedCourse` (the game only ever raises it)
+puts every course in the list. Course ids are the game's own: **9 is the course
+the menu starts on (Rookie Mt.)**, 0-6 are the rest.
+
+`--status` prints the campaign scoreboard (purse, saved purse, progression
+level, per-course unlock states) whenever the money changes and once every five
+seconds. Progression, from `initRaceStartTransition`: level 1 needs a win on
+courses 0-4 and 9, level 2 adds course 5, level 3 adds course 6 and rolls the
+ending credits.
+
+`port/tools/nightmare_search.py` drives trials on the G4 headless (~30 s each,
+12x real time) and appends to `port/tools/nightmare_results.csv`:
+
+    port/tools/nightmare_search.py run course=0,char=1,board=2
+    port/tools/nightmare_search.py sweep 0 1 2 3 4 5 6
 
 ## Fullscreen
 

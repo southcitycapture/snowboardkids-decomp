@@ -93,6 +93,38 @@ session, so headless render tests do not need the console runner.
    present at 1680x1050, exclusive ~3 ms. A connected VNC client stalls every
    swap ~120 ms about once a second (AppleVNCServer reading the surface).
    Next: gamepad, then Rumble Pak.
+5. **Letting the CPU rider learn the game** (2026-09-10 night): `--trial
+   course=,char=,board=,action=,item=,boost=,money=,quit=` runs one measured
+   race headless (~30 s on the G4 at 12x) and prints one result line;
+   `port/tools/nightmare_search.py` sweeps and keeps
+   `port/tools/nightmare_results.csv`.
+
+   How the course is chosen from the port, since this cost the most time to
+   establish: the character-select course menu keeps a *cursor index* into
+   `gCharacterSelectActiveCourseOptions` in `gRaceCourseIndex` and converts it
+   to a real course id only in `fadeOutCharacterSelectCourseMenu`. So a trial
+   parks the cursor on the course it wants and lets the script's own A press
+   confirm -- the game's normal flow, just aimed. The two obvious ways to tell
+   "the course list is on screen" both fail: `gCurrentGameTask` is NULL between
+   the scheduler's dispatches, and `gRacePlayers[0].isActive` is 1 in the menus
+   too (an early version of the trial hooked the wrong branch because of it and
+   silently did nothing). What works is the menu's own state:
+   `gRacePlayers[0].menuState == 0` while the list is navigable and >= 7 once a
+   choice is confirmed, with `gCharacterSelectCourseCursorState.listCursorState`
+   zeroed at the menu's init to re-arm. `--coursetrace` prints all of it.
+
+   Course ids are the game's own and the menu's order is `9, 0, 1, 2, 3, 4, 5,
+   6`: **course 9 is the one the menu starts on**, so every result measured
+   before `course=` existed was course 9, not course 0. `gHighestUnlockedCourse`
+   picks which of the three option lists the menu offers and the game only ever
+   raises it, so raising it from the port exposes 5 and 6 without the shop.
+
+   Progression, from `initRaceStartTransition` (`cupPlacements` is the save's
+   per-course "took first here" flag, index 0x18 of it *is* progressionLevel):
+   level 1 needs wins on courses 0-4 and 9, level 2 adds 5, level 3 adds 6 and
+   sets `gPendingEndingCreditsFlow`. `--status` prints the purse, the
+   progression level, the unlock states and the win flags; `course=-2` aims each
+   race at the first course still unwon.
 
 ## Build
 

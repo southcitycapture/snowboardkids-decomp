@@ -9,6 +9,7 @@
 #include "game/race/race_state.h"
 #include "game/engine/game_task_scheduler.h"
 #include "game/menu/character_select/character_select_course_menu.h"
+#include "game/save_data.h"
 #include "../platform/input.h"
 extern u8 gRaceDemoPlaybackEnabled;
 #define RACE_PLAYER_READY_FLAG 0x40 /* race_flow.c: the rider has finished */
@@ -23,7 +24,10 @@ int sbk_nightmare;
  * inits with them; during the race the chances are pinned and `boost` (in
  * 1/256ths) is added to the speed limit every retrace. When player 1
  * finishes, one result line is printed; with quit=1 the process exits. */
-static struct { int on, chr, board, action, item, boost, quit, course, money; } trial = { 0, -1, -1, -1, -1, 0, 0, -1, -1 };
+#define TRIAL_COURSE_NONE (-1)
+#define TRIAL_COURSE_CAMPAIGN (-2) /* course=-2: aim at the next course still unwon */
+
+static struct { int on, chr, board, action, item, boost, quit, course, money; } trial = { 0, -1, -1, -1, -1, 0, 0, TRIAL_COURSE_NONE, -1 };
 
 /* The character-select course list: the menu keeps a *cursor index* into this
  * option table in gRaceCourseIndex and only converts it to the real course id
@@ -37,7 +41,7 @@ void updateCharacterSelectCourseMenu(void);
 void updateCharacterSelectCourseSubmenu(void);
 void handleCharacterSelectCourseSelection(void);
 
-static int trial_course_seen;
+static int trial_course_seen = -99;
 
 /* Aiming the course menu.
  *
@@ -80,8 +84,9 @@ static void course_trace(unsigned long retraces) {
 static void trial_course_pin(void) {
     const s16 *opt = (const s16 *)gCharacterSelectActiveCourseOptions;
     int ms = gRacePlayers[0].menuState;
+    int want = trial.course;
     int i;
-    if (trial.course < 0) return;
+    if (trial.course == TRIAL_COURSE_NONE) return;
     /* The list the menu offers is picked at its init from gHighestUnlockedCourse
      * (0 -> courses 9,0-4; 1 -> +5; 2 -> +6). The game only ever raises it, so
      * raising it here, every frame, exposes every course to the trial. */
@@ -93,13 +98,26 @@ static void trial_course_pin(void) {
     }
     if (gCharacterSelectCourseCursorState.listCursorState == 0) course_pin_armed = 1;
     if (!course_pin_armed) return;
+    if (want == TRIAL_COURSE_CAMPAIGN) {
+        /* The campaign's next objective: the first course in the menu's own
+         * order that slot 0 has not won yet. cupPlacements[course] == 1 is the
+         * "took first here" flag initRaceStartTransition reads to raise the
+         * progression level (0-4 and 9 -> 1, +5 -> 2, +6 -> 3 and the credits). */
+        want = 9;
+        for (i = 0; i < 10 && opt[i] != -1; i++) {
+            if (opt[i] >= 0 && opt[i] < 11 && gGameSaveDataBuffer[0].cupPlacements[opt[i]] != 1) {
+                want = opt[i];
+                break;
+            }
+        }
+    }
     for (i = 0; i < 10 && opt[i] != -1; i++) {
-        if (opt[i] == trial.course) {
+        if (opt[i] == want) {
             if (gRaceCourseIndex.signedValue != i) {
                 gRaceCourseIndex.signedValue = (s16)i;
-                if (!trial_course_seen) {
-                    trial_course_seen = 1;
-                    printf("sbk-trial: course menu: cursor -> %d (course %d)\n", i, trial.course);
+                if (trial_course_seen != want) {
+                    trial_course_seen = want;
+                    printf("sbk-trial: course menu: cursor -> %d (course %d)\n", i, want);
                     fflush(stdout);
                 }
             }
@@ -197,8 +215,33 @@ static void trial_tick(unsigned long retraces) {
     }
 }
 
+/* --status: the campaign's scoreboard. Save slot 0 holds the purse, the
+ * progression level and the per-course unlock states (-1 = still for sale in
+ * the course shop); gRacePlayers[0].money is the live purse during a run. */
+int sbk_status;
+
+static void status_tick(unsigned long retraces) {
+    static int last_money = -1, last_prog = -1;
+    const GameSaveData *sd = &gGameSaveDataBuffer[0];
+    int money = gRacePlayers[0].money;
+    int i;
+    if (!sbk_status) return;
+    if (retraces % 300 != 0 && money == last_money && sd->progressionLevel == last_prog) return;
+    if (retraces % 300 != 0 && money == last_money) return;
+    last_money = money;
+    last_prog = sd->progressionLevel;
+    printf("sbk-status: r=%lu money=%d savemoney=%d prog=%d highest=%d unlocks=", retraces, money,
+           (int)sd->money, sd->progressionLevel, gHighestUnlockedCourse);
+    for (i = 0; i < 12; i++) printf("%s%d", i ? "," : "", sd->courseUnlockStates[i]);
+    printf(" won=");
+    for (i = 0; i < 11; i++) printf("%s%d", i ? "," : "", sd->cupPlacements[i]);
+    printf("\n");
+    fflush(stdout);
+}
+
 void sbk_autoplay_tick(unsigned long retraces) {
     static unsigned soak_step;
+    status_tick(retraces);
     course_trace(retraces);
     trial_tick(retraces);
     if (gRacePlayers[0].isActive) {
