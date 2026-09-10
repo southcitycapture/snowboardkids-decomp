@@ -5,7 +5,9 @@
 #include <stdint.h>
 #include <string.h>
 #include "game/race/player/race_player_input.h"
+#include "game/race/player/race_player_update.h"
 #include "../platform/input.h"
+extern u8 gRaceDemoPlaybackEnabled;
 #define RACE_PLAYER_READY_FLAG 0x40 /* race_flow.c: the rider has finished */
 
 int sbk_race_debug_enabled;
@@ -42,24 +44,50 @@ int sbk_trial_parse(const char *spec) {
     return 0;
 }
 
+/* applyRacePlayerTuning, port side: the race inits the rider from the menu's
+ * choice, so a trial re-tunes player 1 on its first active frame from the
+ * character and board tables, with `boost` (1/256ths) on the top speed. */
+static void trial_retune(RacePlayer *p) {
+    const RacePlayerTuning *c = &gRacePlayerCharacterTuning[p->characterId % RACE_PLAYER_CHARACTER_TUNING_COUNT];
+    const RacePlayerTuning *b = &gRacePlayerBoardTuning[p->characterVariant % RACE_PLAYER_BOARD_TUNING_COUNT];
+    s32 top = (c->maxSpeed + b->maxSpeed) << 8;
+    top += (s32)(((long long)top * trial.boost) >> 8);
+    p->unk25C = top;
+    p->speedLimit = top;
+    p->gravity = (c->gravity + b->gravity) << 4;
+    p->unk264 = (c->aerialGravity + b->aerialGravity) << 4;
+    p->unk268 = c->turnStrength + b->turnStrength;
+    p->unk274 = (c->lateralDeceleration + b->lateralDeceleration) << 4;
+    p->unk26C = (c->turnRadiusAtFullLean + b->turnRadiusAtFullLean) << 4;
+    p->unk270 = (c->turnRadiusAtHalfLean + b->turnRadiusAtHalfLean) << 4;
+    p->unk278 = (c->forwardDeceleration + b->forwardDeceleration) << 4;
+    p->unk27C = (c->reverseDeceleration + b->reverseDeceleration) << 4;
+    if (p->isCpu) p->unk274 = (p->characterId == 5) ? 0xC0000 : 0x10000; /* the CPU rule in initRacePlayer */
+}
+
+/* Called when the race init has just reset player 1 (isCpu back to 0): the
+ * game's own tuning ran a moment ago, so ours can replace it. */
+static void trial_arm(RacePlayer *p, unsigned long retraces) {
+    if (!trial.on || gRaceDemoPlaybackEnabled) return;
+    trial_start = retraces;
+    trial_money0 = p->money;
+    trial_done = 0;
+    if (trial.chr >= 0) { p->selectedCharacterId = (u8)trial.chr; p->characterId = (u8)trial.chr; }
+    if (trial.board >= 0) p->characterVariant = (u8)trial.board;
+    trial_retune(p);
+    printf("sbk-trial: start r=%lu char=%d board=%d top=%d\n", retraces, p->characterId, p->characterVariant, p->unk25C);
+}
+
 static void trial_tick(unsigned long retraces) {
     RacePlayer *p = &gRacePlayers[0];
     if (!trial.on) return;
     if (!p->isActive) {
-        if (trial.chr >= 0) { p->selectedCharacterId = (u8)trial.chr; p->characterId = (u8)trial.chr; }
-        if (trial.board >= 0) p->characterVariant = (u8)trial.board;
         trial_start = 0;
         return;
     }
-    if (trial_start == 0) {
-        trial_start = retraces;
-        trial_money0 = p->money;
-        trial_done = 0;
-        printf("sbk-trial: start r=%lu char=%d board=%d\n", retraces, p->characterId, p->characterVariant);
-    }
+    if (trial_start == 0) return; /* armed by trial_arm() at the real race init */
     if (trial.action >= 0) p->actionTriggerChance = (u8)trial.action;
     if (trial.item >= 0) p->itemTriggerChance = (u8)trial.item;
-    if (trial.boost != 0) p->speedLimit += (s32)(((long long)p->speedLimit * trial.boost) >> 8);
     if (!trial_done && (p->stateFlags & RACE_PLAYER_READY_FLAG)) {
         int i, ahead = 0;
         trial_done = 1;
@@ -76,10 +104,8 @@ static void trial_tick(unsigned long retraces) {
             sbk_request_quit_now();
         }
     }
-} /* --nightmare: every CPU rider uses items and tricks at every chance (the game's per-course table gives 100/255) */
+}
 
-/* Called every retrace. The race code checks isCpu each update, so flipping it
- * while the player is active hands the rider to the AI that knows the course. */
 void sbk_autoplay_tick(unsigned long retraces) {
     static unsigned soak_step;
     trial_tick(retraces);
@@ -96,6 +122,7 @@ void sbk_autoplay_tick(unsigned long retraces) {
         if (sbk_autoplay && gRacePlayers[0].isCpu == 0) {
             gRacePlayers[0].isCpu = 1;
             printf("sbk: autoplay: player 1 handed to the CPU rider\n");
+            trial_arm(&gRacePlayers[0], retraces);
         }
         return;
     }
