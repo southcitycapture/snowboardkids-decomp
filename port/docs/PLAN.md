@@ -68,6 +68,11 @@ session, so headless render tests do not need the console runner.
    audio task, keyboard input; `g4 shot` shows the title/intro rendering.
 2. **Menus + gameplay**: combiner coverage for everything the game draws,
    controller mapping, frame pacing, Controller Pak emulation (a 32 KB file).
+   DONE 2026-09-10 except the Controller Pak: every menu through to a race
+   on Rookie Mt. renders and runs (scripts/race-walk.txt, scripts/race-drive.txt);
+   text steady (content-hashed texture cache), title fade smooth (overrun
+   row trim), the race-entry crash fixed (garbage SETTIMG skipped). Scripted
+   playback is deterministic (idle-gated retraces, simulated AI length).
 3. **Audio**: ABI 1 command-list interpreter feeding SDL audio at 22050 Hz.
    DONE 2026-09-10: port/src/audio/audio_task.c runs the game's aspMain lists
    on a host DMEM image (ADPCM, 4-tap resampler, per-sample envelope lanes,
