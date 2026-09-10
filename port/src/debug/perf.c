@@ -76,12 +76,13 @@ void sbk_perf_report(void) {
     acc[SBK_PERF_GAME] -= acc[SBK_PERF_GFX] + acc[SBK_PERF_AUDIO]; /* tasks run inside the scheduler */
     if (acc[SBK_PERF_GAME] < 0) acc[SBK_PERF_GAME] = 0;
     snprintf(line, sizeof(line),
-             "%.1f Hz cpu %.0f%% | game %.1f gfx %.1f aud %.1f gl %.1f idle %.1f ms | frame max %.1f (game %.1f gfx %.1f aud %.1f gl %.1f) | %lu tris %lu draws %lu tex %luKB",
+             "%.1f Hz cpu %.0f%% | game %.1f gfx %.1f aud %.1f gl %.1f idle %.1f ms | frame max %.1f (game %.1f gfx %.1f aud %.1f gl %.1f: end %.1f finish %.1f swap %.1f) | %lu tris %lu draws %lu tex %luKB",
              frames * 1000000.0 / wall, 100.0 * (cpu - last_cpu) / wall,
              acc[SBK_PERF_GAME] / frames / 1000.0, acc[SBK_PERF_GFX] / frames / 1000.0,
              acc[SBK_PERF_AUDIO] / frames / 1000.0, acc[SBK_PERF_PRESENT] / frames / 1000.0,
              acc[SBK_PERF_IDLE] / frames / 1000.0, frame_max / 1000.0,
              peak[SBK_PERF_GAME] / 1000.0, peak[SBK_PERF_GFX] / 1000.0, peak[SBK_PERF_AUDIO] / 1000.0, peak[SBK_PERF_PRESENT] / 1000.0,
+             peak[SBK_PERF_ENDFRAME] / 1000.0, peak[SBK_PERF_FINISH] / 1000.0, peak[SBK_PERF_SWAP] / 1000.0,
              stat_tris / frames, stat_draws / frames, stat_tex / frames, stat_tex_bytes / frames / 1024);
     printf("sbk-perf: %s\n", line);
     gfx_set_window_title(line);

@@ -1953,6 +1953,10 @@ void gfx_run(Gfx *commands) {
         gfx_current_dimensions.aspect_ratio = (float)gfx_current_dimensions.width / (float)gfx_current_dimensions.height;
         gfx_rapi->start_frame();
         frame_open = true;
+        /* re-apply viewport and scissor on the first draw of every frame: a
+         * fullscreen context can have them reset behind our back */
+        memset(&rendering_state.viewport, 0xFF, sizeof(rendering_state.viewport));
+        memset(&rendering_state.scissor, 0xFF, sizeof(rendering_state.scissor));
     }
     gfx_run_dl(commands);
     gfx_flush();
@@ -1965,9 +1969,9 @@ void gfx_present(void) {
         return;
     }
     sbk_stat_present++;
-    gfx_rapi->end_frame();
-    gfx_rapi->finish_render();
-    gfx_wapi->swap_buffers();
+    SBK_PERF_TIMED(SBK_PERF_ENDFRAME, gfx_rapi->end_frame());
+    SBK_PERF_TIMED(SBK_PERF_FINISH, gfx_rapi->finish_render());
+    SBK_PERF_TIMED(SBK_PERF_SWAP, gfx_wapi->swap_buffers());
     frame_open = false;
     gl_held_target = NULL; /* the back buffer is undefined after a swap */
 }

@@ -17,7 +17,8 @@ a fixed-function OpenGL 1.3 backend, scripted input.
 | Audio: aspMain (ABI 1) interpreter feeding SDL at 22050 Hz | done, music and effects play |
 | Performance: `--perf` phase timing; a race uses ~6 of 16.7 ms per retrace on the 1 GHz G4 | measured, headroom |
 | Self-play: `--autoplay` (CPU drives player 1), `--soak` (also walks menus), `--nightmare` | done |
-| Fullscreen, gamepad, Rumble | next, in that order |
+| Fullscreen: exclusive mode, 4:3 letterbox, Cmd+Return/Cmd+F/F11 toggle, on by default from the Finder | done |
+| Gamepad, Rumble | next, in that order |
 
 Scripted input is deterministic: `--play` a text script or a Mupen `.m64`
 movie, `--record` one from a keyboard session, and two runs of the same script
@@ -50,6 +51,20 @@ every CPU rider's item and trick chance to the maximum. `--perf` prints a
 per-second line (and puts it in the window title) with the time spent in
 game logic, display lists, audio, present and idle, the worst frame, and
 triangle / draw / texture-upload counts. `g4 top` shows the machine's load.
+
+## Fullscreen
+
+`--fullscreen` switches the display to its desktop mode and draws the N64
+frame as a 4:3 box in the middle (`--fullscreen=1024x768` picks another
+mode, `--fullscreen-desktop` uses a borderless window instead, `--wide`
+fills the width sm64-port style). Launching the app from the Finder starts
+fullscreen (`SBK_FULLSCREEN=1` does the same from a shell); `--windowed` keeps
+the 640x480 window. Cmd+Return, Cmd+F, Option+Return or F11 toggle at runtime.
+
+Note for remote testing: a connected Screen Sharing (VNC) client makes the
+VNC server read the fullscreen surface about once a second, which stalls the
+swap ~120 ms at 1680x1050 and shows as a flicker on the remote view. The
+G4's own display does not have this.
 
 The Controller Pak lives at `~/Library/Application Support/SnowboardKids/controller-pak-1.mpk`,
 the raw 32 KB layout emulators use, so saves can move both ways.

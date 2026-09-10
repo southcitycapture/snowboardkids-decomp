@@ -87,7 +87,12 @@ session, so headless render tests do not need the console runner.
    retrace (game 1.2, gfx 2-3.5, audio 1, present 1-2), 30-40% of one CPU;
    worst frames 20-50 ms come from vsync waits in present and display-list
    bursts. Self-play: --autoplay/--soak/--nightmare (port/src/debug/race_dbg.c).
-   Order agreed with the user: fullscreen, gamepad, then Rumble Pak.
+   Fullscreen DONE 2026-09-10 night: SDL_WINDOW_FULLSCREEN (mode switch) with a
+   4:3 letterbox applied in the GL backend (output rect offset on viewport and
+   scissor; window cleared black per frame). FULLSCREEN_DESKTOP costs ~8 ms per
+   present at 1680x1050, exclusive ~3 ms. A connected VNC client stalls every
+   swap ~120 ms about once a second (AppleVNCServer reading the surface).
+   Next: gamepad, then Rumble Pak.
 
 ## Build
 

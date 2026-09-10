@@ -465,12 +465,20 @@ static void gl13_set_zmode_decal(bool zmode_decal) {
     }
 }
 
+/* The N64 frame is drawn into this rectangle of the window (4:3 letterbox in
+ * fullscreen); gfx_pc only ever sees its size, the offset is applied here. */
+static int out_x, out_y, out_w, out_h, out_win_w, out_win_h;
+
+void gfx_gl13_set_output_rect(int x, int y, int w, int h, int win_w, int win_h) {
+    out_x = x; out_y = y; out_w = w; out_h = h; out_win_w = win_w; out_win_h = win_h;
+}
+
 static void gl13_set_viewport(int x, int y, int width, int height) {
-    glViewport(x, y, width, height);
+    glViewport(x + out_x, y + out_y, width, height);
 }
 
 static void gl13_set_scissor(int x, int y, int width, int height) {
-    glScissor(x, y, width, height);
+    glScissor(x + out_x, y + out_y, width, height);
 }
 
 static void gl13_set_use_alpha(bool use_alpha) {
@@ -609,6 +617,15 @@ static void gl13_on_resize(void) {
 }
 
 static void gl13_start_frame(void) {
+    /* letterbox: paint the whole window black, then confine drawing to the output rectangle */
+    if (out_x != 0 || out_y != 0) {
+        glDisable(GL_SCISSOR_TEST);
+        glViewport(0, 0, out_win_w, out_win_h);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glDepthMask(GL_TRUE);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_SCISSOR_TEST);
+    }
     glDisable(GL_SCISSOR_TEST);
     glDepthMask(GL_TRUE);
     glEnable(GL_SCISSOR_TEST);
@@ -663,7 +680,11 @@ static void gl13_finish_render(void) {
 
 static void gl13_clear(bool color, float r, float g, float b, bool depth) {
     GLbitfield mask = 0;
-    glDisable(GL_SCISSOR_TEST);
+    if (out_w > 0) {
+        glScissor(out_x, out_y, out_w, out_h); /* the frame, not the letterbox bars */
+    } else {
+        glDisable(GL_SCISSOR_TEST);
+    }
     if (color) { glClearColor(r, g, b, 1.0f); mask |= GL_COLOR_BUFFER_BIT; }
     if (depth) { glDepthMask(GL_TRUE); mask |= GL_DEPTH_BUFFER_BIT; }
     if (mask) glClear(mask);

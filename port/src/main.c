@@ -95,7 +95,8 @@ int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0); /* logs survive a crash */
     setvbuf(stderr, NULL, _IONBF, 0);
     rom = find_rom(argc, argv);
-    int fullscreen = 0;
+    int fullscreen = 0; /* 1 = yes, -1 = --windowed, 0 = default (fullscreen when SBK_FULLSCREEN=1 or launched from the Finder) */
+    extern int sbk_wide_output;
     const char *pak_path = NULL;
     const char *play = NULL, *record = NULL;
     unsigned long max_frames = 0;
@@ -108,6 +109,23 @@ int main(int argc, char **argv) {
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "-f") == 0) {
             fullscreen = 1;
+        } else if (strncmp(argv[i], "--fullscreen=", 13) == 0) {
+            extern int sbk_fullscreen_w, sbk_fullscreen_h;
+            fullscreen = 1;
+            sscanf(argv[i] + 13, "%dx%d", &sbk_fullscreen_w, &sbk_fullscreen_h);
+        } else if (strcmp(argv[i], "--fullscreen-desktop") == 0) {
+            extern int sbk_fullscreen_desktop;
+            fullscreen = 1;
+            sbk_fullscreen_desktop = 1;
+        } else if (strcmp(argv[i], "--novsync") == 0) {
+            extern int sbk_novsync;
+            sbk_novsync = 1;
+        } else if (strcmp(argv[i], "--windowed") == 0) {
+            fullscreen = -1;
+        } else if (strcmp(argv[i], "--wide") == 0) {
+            sbk_wide_output = 1;
+        } else if (strncmp(argv[i], "-psn_", 5) == 0) {
+            if (fullscreen == 0) fullscreen = 1; /* launched from the Finder: go fullscreen */
         } else if (strcmp(argv[i], "--trace") == 0) {
             sbk_trace = 1;
         } else if (strcmp(argv[i], "--play") == 0 && i + 1 < argc) {
@@ -151,7 +169,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -164,7 +182,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "sbk: SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
-    gfx_init(&gfx_sdl_gl13_wapi, &gfx_gl13_rapi, "Snowboard Kids", fullscreen != 0);
+    if (fullscreen == 0 && getenv("SBK_FULLSCREEN") != NULL && getenv("SBK_FULLSCREEN")[0] == '1') fullscreen = 1;
+    gfx_init(&gfx_sdl_gl13_wapi, &gfx_gl13_rapi, "Snowboard Kids", fullscreen > 0);
     sbk_input_init();
     sbk_pak_open(pak_path);
     if (play != NULL && sbk_input_play_load(play) != 0) {

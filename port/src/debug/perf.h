@@ -1,7 +1,7 @@
 #ifndef SBK_PERF_H
 #define SBK_PERF_H
 
-enum { SBK_PERF_GAME, SBK_PERF_GFX, SBK_PERF_AUDIO, SBK_PERF_PRESENT, SBK_PERF_IDLE, SBK_PERF_PHASES };
+enum { SBK_PERF_GAME, SBK_PERF_GFX, SBK_PERF_AUDIO, SBK_PERF_PRESENT, SBK_PERF_IDLE, SBK_PERF_ENDFRAME, SBK_PERF_FINISH, SBK_PERF_SWAP, SBK_PERF_PHASES };
 
 extern int sbk_perf_enabled;
 extern unsigned long sbk_perf_tris, sbk_perf_draws, sbk_perf_tex, sbk_perf_tex_bytes;
