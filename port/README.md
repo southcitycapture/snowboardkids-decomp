@@ -12,9 +12,10 @@ a fixed-function OpenGL 1.3 backend, scripted input.
 | --- | --- |
 | Toolchain: matching ROM build on the Mac, cross compile in Docker | done |
 | First frame: boot, threads, DMA, title demo on the real G4 | done |
-| Menus and gameplay: every menu, a race on Rookie Mt. | done, Controller Pak still "not plugged" |
+| Menus and gameplay: every menu, a race on Rookie Mt. | done |
+| Controller Pak: 32 KB image, save and load through libultra's own pfs code | done, `controller-pak-1.mpk` in Application Support |
 | Audio: aspMain (ABI 1) interpreter feeding SDL at 22050 Hz | done, music and effects play |
-| Polish: Controller Pak file, Rumble, performance, fullscreen, gamepad | next |
+| Polish: Rumble, performance, fullscreen, gamepad | next |
 
 Scripted input is deterministic: `--play` a text script or a Mupen `.m64`
 movie, `--record` one from a keyboard session, and two runs of the same script
@@ -28,11 +29,16 @@ end on the same frame hash (`--frames N --hashframe`).
 
     snowboardkids [--fullscreen] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64]
                   [--frames N] [--hashframe] [--mute] [--noaudio] [--wav OUT.wav]
-                  [--trace] [--dumpdl N] [--dumpframes N] [--dumptris] [--racedbg] [rom.z64]
+                  [--pak FILE.mpk] [--cmds FILE] [--trace] [--dumpdl N] [--dumpframes N]
+                  [--dumptris] [--racedbg] [--peek ADDR:LEN] [rom.z64]
 
 Scripts in `scripts/`: `title-start.txt`, `menu-walk.txt` (to mode select),
 `race-walk.txt` (through the pak prompts into a race), `race-drive.txt`
-(the same, then taps A with the stick forward).
+(the same, then taps A with the stick forward), `pak-save.txt`. `--cmds FILE`
+appends script lines dropped into FILE at runtime, for driving menus step by step.
+
+The Controller Pak lives at `~/Library/Application Support/SnowboardKids/controller-pak-1.mpk`,
+the raw 32 KB layout emulators use, so saves can move both ways.
 
 Design notes, survey facts and the gotchas are in `docs/PLAN.md`.
 
