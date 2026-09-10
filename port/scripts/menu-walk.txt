@@ -1,0 +1,18 @@
+# Title -> Start -> answer the prompts with A a few times, then poke Start.
+wait 240
+press START 3
+wait 150
+press A 3
+wait 90
+press A 3
+wait 90
+press A 3
+wait 90
+press START 3
+wait 90
+press A 3
+wait 90
+stick 80 0 10
+wait 30
+press A 3
+wait 200
