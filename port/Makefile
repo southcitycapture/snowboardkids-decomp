@@ -22,7 +22,7 @@ ifeq ($(TARGET),ppc-darwin)
   TARGET_LDFLAGS := -isysroot $(SYSROOT) -mmacosx-version-min=10.4 -Wl,-pagezero_size,0x10000000 \
                     -framework OpenGL -framework Cocoa -framework Carbon -framework IOKit \
                     -framework CoreAudio -framework AudioUnit -framework AudioToolbox \
-                    -framework CoreFoundation -liconv -static-libgcc
+                    -framework CoreFoundation -framework ForceFeedback -liconv -static-libgcc
   SYM_PREFIX := _
   CTX_ASM    := src/ultra/sbk_ctx_ppc_darwin.s
   EXE        := $(BUILD)/snowboardkids

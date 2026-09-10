@@ -20,5 +20,7 @@ void sbk_input_play_shutdown(void);
 void sbk_input_play_set_cmdfile(const char *path);
 void sbk_input_play_poll(void);
 void sbk_input_play_add(const char *line);
+union SDL_Event;
+void sbk_input_joy_event(const union SDL_Event *ev);
 
 #endif

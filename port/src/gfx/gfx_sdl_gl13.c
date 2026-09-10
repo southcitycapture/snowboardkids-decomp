@@ -109,6 +109,13 @@ static void gfx_sdl_handle_events(void) {
             case SDL_QUIT:
                 sbk_input_request_quit();
                 break;
+            case SDL_JOYDEVICEADDED:
+            case SDL_JOYDEVICEREMOVED:
+            case SDL_JOYBUTTONDOWN:
+            case SDL_JOYAXISMOTION:
+            case SDL_JOYHATMOTION:
+                sbk_input_joy_event(&ev);
+                break;
             case SDL_WINDOWEVENT:
                 if (ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || ev.window.event == SDL_WINDOWEVENT_RESIZED) {
                     SDL_GetWindowSize(wnd, &win_w, &win_h);
