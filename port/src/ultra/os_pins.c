@@ -11,9 +11,13 @@ void sbk_pin_init(void) {
         if (p->addr < SBK_RDRAM_BASE || p->addr + p->size > SBK_RDRAM_BASE + SBK_RDRAM_SIZE) {
             continue;
         }
-        memcpy((void *)(uintptr_t)p->addr, p->twin, p->size);
+        uint32_t size = p->size;
+        if (p->twin_size != NULL && *p->twin_size < size) {
+            size = (uint32_t)*p->twin_size;
+        }
+        memcpy((void *)(uintptr_t)p->addr, p->twin, size);
         n++;
-        bytes += p->size;
+        bytes += size;
     }
     printf("sbk: pinned data: %u objects, %u bytes copied into RDRAM\n", n, bytes);
 }

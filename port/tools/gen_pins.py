@@ -107,19 +107,30 @@ def main():
                 continue  # bss: zero already
             if obj not in twins_available:
                 continue  # no native twin (libultra data the port replaces)
-            size = sizes.get(name, 0)
-            if size == 0:
-                nxt = pins[i + 1][0] if i + 1 < len(pins) else sec_end
-                size = min(nxt, sec_end) - addr
-            if size <= 0 or size > (1 << 20):
+            # Cap: the space up to the next pinned symbol (or the section end).
+            # C twins publish their real sizeof (mirror_src.py); the copy takes
+            # the smaller of the two. Translated asm twins keep the ELF size,
+            # which is exact for them. The ELF size alone is NOT trusted for C
+            # data: IDO reports only the initialised prefix of string tables.
+            nxt = pins[i + 1][0] if i + 1 < len(pins) else sec_end
+            cap = min(nxt, sec_end) - addr
+            if cap <= 0:
+                cap = sizes.get(name, 0)
+            if cap <= 0 or cap > (1 << 20):
                 continue
-            decls.append("extern const char %s%s[];\n" % (name, args.suffix))
-            rows.append("    { %s%s, 0x%08Xu, %u },\n" % (name, args.suffix, addr, size))
+            from_asm = obj.startswith("build/asm/")
+            if from_asm:
+                size = sizes.get(name, 0) or cap
+                decls.append("extern const char %s%s[];\n" % (name, args.suffix))
+                rows.append("    { %s%s, 0x%08Xu, %u, NULL },\n" % (name, args.suffix, addr, min(size, cap)))
+            else:
+                decls.append("extern const char %s%s[];\nextern const unsigned long %s__sbk_size;\n" % (name, args.suffix, name))
+                rows.append("    { %s%s, 0x%08Xu, %u, &%s__sbk_size },\n" % (name, args.suffix, addr, cap, name))
             copied += 1
         out.writelines(decls)
         out.write("\nconst struct sbk_pin sbk_pin_table[] = {\n")
         out.writelines(rows)
-        out.write("    { NULL, 0, 0 }\n};\n")
+        out.write("    { NULL, 0, 0, NULL }\n};\n")
     print("pins: %d symbols pinned, %d initialised from twins -> %s" % (len(pins), copied, args.table_c))
 
 

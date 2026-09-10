@@ -3,12 +3,14 @@
  * One standard controller is always plugged into port 1, driven from the
  * host's keyboard/gamepad state (platform/input.c). Reads complete at once
  * and post the SI event, like the real hardware would a few hundred
- * microseconds later. Controller Pak and Rumble Pak report "not plugged"
- * for now; a file-backed pak comes with milestone 2. */
+ * microseconds later. The Controller Pak on port 1 is a
+ * 32 KB image file (os_pfs.c); the Rumble Pak reports "not plugged". */
 #include "ultra.h"
 #include <string.h>
 #include "sbk_os.h"
 #include "../platform/input.h"
+
+int sbk_pak_present(void); /* os_pfs.c */
 
 static OSContStatus sbk_cont_status[MAXCONTROLLERS];
 static OSContPad sbk_cont_pad[MAXCONTROLLERS];
@@ -25,7 +27,7 @@ s32 osContInit(OSMesgQueue *mq, u8 *bitpattern, OSContStatus *data) {
     }
     for (i = 0; i < sbk_input_controller_count(); i++) {
         data[i].type = CONT_TYPE_NORMAL;
-        data[i].status = 0;
+        data[i].status = (i == 0 && sbk_pak_present()) ? CONT_CARD_ON : 0;
         data[i].errno = 0;
     }
     memcpy(sbk_cont_status, data, sizeof(sbk_cont_status));
@@ -98,68 +100,4 @@ s32 osMotorStop(OSPfs *pfs) {
     return PFS_ERR_NOPACK;
 }
 
-/* ---- Controller Pak: absent (milestone 2 replaces this file's tail) ------- */
-
-s32 osPfsInitPak(OSMesgQueue *mq, OSPfs *pfs, int channel) {
-    (void)mq;
-    memset(pfs, 0, sizeof(*pfs));
-    pfs->channel = channel;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsRepairId(OSPfs *pfs) {
-    (void)pfs;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsChecker(OSPfs *pfs) {
-    (void)pfs;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsAllocateFile(OSPfs *pfs, u16 company_code, u32 game_code, u8 *game_name, u8 *ext_name, int file_size_in_bytes, s32 *file_no) {
-    (void)pfs; (void)company_code; (void)game_code; (void)game_name; (void)ext_name; (void)file_size_in_bytes;
-    *file_no = -1;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsFindFile(OSPfs *pfs, u16 company_code, u32 game_code, u8 *game_name, u8 *ext_name, s32 *file_no) {
-    (void)pfs; (void)company_code; (void)game_code; (void)game_name; (void)ext_name;
-    *file_no = -1;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsDeleteFile(OSPfs *pfs, u16 company_code, u32 game_code, u8 *game_name, u8 *ext_name) {
-    (void)pfs; (void)company_code; (void)game_code; (void)game_name; (void)ext_name;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsReadWriteFile(OSPfs *pfs, s32 file_no, u8 flag, int offset, int size_in_bytes, u8 *data_buffer) {
-    (void)pfs; (void)file_no; (void)flag; (void)offset; (void)size_in_bytes; (void)data_buffer;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsFileState(OSPfs *pfs, s32 file_no, OSPfsState *state) {
-    (void)pfs; (void)file_no;
-    memset(state, 0, sizeof(*state));
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsFreeBlocks(OSPfs *pfs, s32 *bytes_not_used) {
-    (void)pfs;
-    *bytes_not_used = 0;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsNumFiles(OSPfs *pfs, s32 *max_files, s32 *files_used) {
-    (void)pfs;
-    *max_files = 0;
-    *files_used = 0;
-    return PFS_ERR_NOPACK;
-}
-
-s32 osPfsIsPlug(OSMesgQueue *mq, u8 *pattern) {
-    (void)mq;
-    *pattern = 0;
-    return 0;
-}
+/* Controller Pak: see os_pfs.c (libultra's own pfs code over a file-backed image). */

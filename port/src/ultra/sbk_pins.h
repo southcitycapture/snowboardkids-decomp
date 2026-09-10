@@ -7,7 +7,8 @@
 struct sbk_pin {
     const char *twin;   /* native copy holding the initial value */
     uint32_t addr;      /* N64 address inside the emulated RDRAM */
-    uint32_t size;
+    uint32_t size;               /* cap: bytes up to the next pinned symbol */
+    const unsigned long *twin_size; /* sizeof the native twin, or NULL (asm twins: size is exact) */
 };
 
 extern const struct sbk_pin sbk_pin_table[];

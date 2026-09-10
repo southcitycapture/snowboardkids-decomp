@@ -27,6 +27,8 @@ extern int sbk_dump_frames;
 extern int sbk_dump_tris;
 extern int sbk_audio_disabled;
 extern int sbk_race_debug_enabled;
+int sbk_pak_open(const char *path);
+int sbk_peek_add(const char *spec);
 void sbk_race_debug(unsigned long retraces);
 extern struct GfxWindowManagerAPI gfx_sdl_gl13_wapi;
 extern struct GfxRenderingAPI gfx_gl13_rapi;
@@ -59,7 +61,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--peek") == 0) {
             i++; /* option value */
         }
     }
@@ -91,6 +93,7 @@ int main(int argc, char **argv) {
     setvbuf(stderr, NULL, _IONBF, 0);
     rom = find_rom(argc, argv);
     int fullscreen = 0;
+    const char *pak_path = NULL;
     const char *play = NULL, *record = NULL;
     unsigned long max_frames = 0;
     unsigned last_dma = 0;
@@ -123,6 +126,10 @@ int main(int argc, char **argv) {
             sbk_audio_disabled = 1; /* skip the command-list interpreter entirely */
         } else if (strcmp(argv[i], "--dumptris") == 0) {
             sbk_dump_tris = 1;
+        } else if (strcmp(argv[i], "--pak") == 0 && i + 1 < argc) {
+            pak_path = argv[++i];
+        } else if (strcmp(argv[i], "--peek") == 0 && i + 1 < argc) {
+            sbk_peek_add(argv[++i]);
         } else if (strcmp(argv[i], "--racedbg") == 0) {
             sbk_race_debug_enabled = 1;
         } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
@@ -146,6 +153,7 @@ int main(int argc, char **argv) {
     }
     gfx_init(&gfx_sdl_gl13_wapi, &gfx_gl13_rapi, "Snowboard Kids", fullscreen != 0);
     sbk_input_init();
+    sbk_pak_open(pak_path);
     if (play != NULL && sbk_input_play_load(play) != 0) {
         return 1;
     }

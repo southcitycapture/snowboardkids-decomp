@@ -57,6 +57,7 @@ def main():
                     pinned.add(parts[0])
 
     out = []
+    renamed = []
     with open(args.src) as f:
         for line in f:
             stripped = line.rstrip("\n")
@@ -73,7 +74,13 @@ def main():
                     decl_open = re.sub(r"\[[^\]]*\]", "[]", decl, count=1)
                     line = ("extern %s;\n" % decl_open
                             + stripped[:a] + name + args.suffix + stripped[b:] + "\n")
+                    renamed.append(name)
             out.append(line)
+    # The N64 ELF's symbol sizes are unreliable for IDO data (textconv'd string
+    # tables report only their initialised prefix); publish the real size of
+    # every twin so the startup copy (gen_pins.py) can use it.
+    for name in renamed:
+        out.append("const unsigned long %s__sbk_size = sizeof(%s%s);\n" % (name, name, args.suffix))
     with open(args.dst, "w") as f:
         f.writelines(out)
 

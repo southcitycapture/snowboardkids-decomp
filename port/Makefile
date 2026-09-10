@@ -44,7 +44,8 @@ N64_C      := $(patsubst build/%.o,%.c,$(N64_OBJS))
 # BSS that lives in the emulated RDRAM like every other pinned global.
 GAME_C     := $(filter-out src/ultra/% src/rsp/% src/boot/% src/engine/system_runtime_buffers.c,$(N64_C))
 # ...plus the pure-C parts of libultra we keep: the audio synthesizer and gu math.
-ULTRA_C    := $(filter src/ultra/audio/%.c src/ultra/gu/%.c,$(N64_C))
+ULTRA_C    := $(filter src/ultra/audio/%.c src/ultra/gu/%.c src/ultra/io/pfs%.c src/ultra/io/contpfs.c,$(N64_C))
+ULTRA_C    := $(filter-out src/ultra/io/pfsisplug.c src/ultra/io/pfsgetstatus.c,$(ULTRA_C)) # those talk to the PIF; os_pfs.c replaces them
 # Linker scripts whose assignments are address arithmetic (asset/segment addresses,
 # aliases into pinned data).
 ABS_LD := $(wildcard $(ROOT)/linker_scripts/*.ld) $(ROOT)/undefined_syms_auto.txt
