@@ -19,5 +19,6 @@ void sbk_input_play_step(uint16_t *buttons, int8_t *x, int8_t *y);
 void sbk_input_play_shutdown(void);
 void sbk_input_play_set_cmdfile(const char *path);
 void sbk_input_play_poll(void);
+void sbk_input_play_add(const char *line);
 
 #endif

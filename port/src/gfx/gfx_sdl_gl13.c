@@ -80,6 +80,12 @@ static double gfx_sdl_get_time(void) {
     return (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
 }
 
+static void gfx_sdl_set_title(const char *title) {
+    if (wnd != NULL) {
+        SDL_SetWindowTitle(wnd, title);
+    }
+}
+
 static void gfx_sdl_shutdown(void) {
     if (ctx != NULL) {
         SDL_GL_DeleteContext(ctx);
@@ -95,5 +101,6 @@ struct GfxWindowManagerAPI gfx_sdl_gl13_wapi = {
     gfx_sdl_handle_events,
     gfx_sdl_swap_buffers,
     gfx_sdl_get_time,
-    gfx_sdl_shutdown
+    gfx_sdl_shutdown,
+    gfx_sdl_set_title,
 };

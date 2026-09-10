@@ -83,6 +83,11 @@ session, so headless render tests do not need the console runner.
    Verified on the G4: title theme, START sweep and menu music; the frame
    hash of the deterministic menu-walk run is unchanged.
 4. **Polish**: performance on the G4, fullscreen, gamepad, Rumble, save UX.
+   Performance measured 2026-09-10 (--perf): a race costs ~6 ms per 16.7 ms
+   retrace (game 1.2, gfx 2-3.5, audio 1, present 1-2), 30-40% of one CPU;
+   worst frames 20-50 ms come from vsync waits in present and display-list
+   bursts. Self-play: --autoplay/--soak/--nightmare (port/src/debug/race_dbg.c).
+   Order agreed with the user: fullscreen, gamepad, then Rumble Pak.
 
 ## Build
 

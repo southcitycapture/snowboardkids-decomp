@@ -14,6 +14,7 @@
 #include <PR/gbi.h>
 
 #include "gfx_pc.h"
+#include "../debug/perf.h"
 #include "gfx_cc.h"
 #include "gfx_window_manager_api.h"
 #include "gfx_rendering_api.h"
@@ -185,6 +186,8 @@ static void gfx_flush(void) {
     if (buf_vbo_len > 0) {
         int num = buf_vbo_num_tris;
         unsigned long t0 = get_time();
+        sbk_perf_draws++;
+        sbk_perf_tris += buf_vbo_num_tris;
         gfx_rapi->draw_triangles(buf_vbo, buf_vbo_len, buf_vbo_num_tris);
         buf_vbo_len = 0;
         buf_vbo_num_tris = 0;
@@ -542,6 +545,8 @@ static void import_texture(int tile) {
     }
     
     int t0 = get_time();
+    sbk_perf_tex++;
+    sbk_perf_tex_bytes += rdp.loaded_texture[tile].size_bytes;
     if (fmt == G_IM_FMT_RGBA) {
         if (siz == G_IM_SIZ_16b) {
             import_texture_rgba16(tile);
@@ -1965,6 +1970,12 @@ void gfx_present(void) {
     gfx_wapi->swap_buffers();
     frame_open = false;
     gl_held_target = NULL; /* the back buffer is undefined after a swap */
+}
+
+void gfx_set_window_title(const char *title) {
+    if (gfx_wapi != NULL && gfx_wapi->set_title != NULL) {
+        gfx_wapi->set_title(title);
+    }
 }
 
 void gfx_handle_events(void) {

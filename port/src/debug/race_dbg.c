@@ -4,8 +4,46 @@
 #include <stdio.h>
 #include <stdint.h>
 #include "game/race/player/race_player_input.h"
+#include "../platform/input.h"
 
 int sbk_race_debug_enabled;
+int sbk_autoplay; /* --autoplay: player 1 is driven by the game's own CPU rider logic */
+int sbk_soak;     /* --soak: outside a race, keep confirming through the menus (implies --autoplay) */
+int sbk_nightmare; /* --nightmare: every CPU rider uses items and tricks at every chance (the game's per-course table gives 100/255) */
+
+/* Called every retrace. The race code checks isCpu each update, so flipping it
+ * while the player is active hands the rider to the AI that knows the course. */
+void sbk_autoplay_tick(unsigned long retraces) {
+    static unsigned soak_step;
+    if (gRacePlayers[0].isActive) {
+        if (sbk_nightmare) {
+            int i;
+            for (i = 0; i < RACE_PLAYER_COUNT; i++) {
+                if (gRacePlayers[i].isActive && gRacePlayers[i].isCpu) {
+                    gRacePlayers[i].actionTriggerChance = 255;
+                    gRacePlayers[i].itemTriggerChance = 255;
+                }
+            }
+        }
+        if (sbk_autoplay && gRacePlayers[0].isCpu == 0) {
+            gRacePlayers[0].isCpu = 1;
+            printf("sbk: autoplay: player 1 handed to the CPU rider\n");
+        }
+        return;
+    }
+    /* Menus: a cycle of YES-and-confirm, confirm, START, confirm every 1.5 s
+     * gets through the prompts, the title and the results screens. It is a
+     * monkey, not a navigator: it may loop in a shop, but it keeps the game
+     * moving without anyone at the keyboard. */
+    if (sbk_soak && retraces % 90 == 0) {
+        switch (soak_step++ & 3) {
+            case 0: sbk_input_play_add("stick 0 80 3"); sbk_input_play_add("wait 6"); sbk_input_play_add("press A 3"); break;
+            case 1: sbk_input_play_add("press A 3"); break;
+            case 2: sbk_input_play_add("press START 3"); break;
+            default: sbk_input_play_add("press A 3"); break;
+        }
+    }
+}
 
 /* --peek ADDR:LEN (hex, repeatable): dump RDRAM bytes once a second */
 static struct { unsigned addr, len; } peeks[8];

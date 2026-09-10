@@ -127,6 +127,13 @@ static int load_script(const char *path) {
     return 0;
 }
 
+/* Programmatic script lines (soak mode etc.). */
+void sbk_input_play_add(const char *line) {
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s\n", line);
+    if (add_line(buf)) script_done = 0;
+}
+
 /* --cmds FILE: whenever FILE appears, its lines are appended to the script
  * and the file removed, so a session can be driven step by step from the
  * host (write to a temp name, then rename into place). */

@@ -28,7 +28,10 @@ extern int sbk_dump_tris;
 extern int sbk_audio_disabled;
 extern int sbk_race_debug_enabled;
 int sbk_pak_open(const char *path);
+#include "debug/perf.h"
 int sbk_peek_add(const char *spec);
+extern int sbk_autoplay, sbk_soak, sbk_nightmare;
+void sbk_autoplay_tick(unsigned long retraces);
 void sbk_race_debug(unsigned long retraces);
 extern struct GfxWindowManagerAPI gfx_sdl_gl13_wapi;
 extern struct GfxRenderingAPI gfx_gl13_rapi;
@@ -132,6 +135,14 @@ int main(int argc, char **argv) {
             sbk_peek_add(argv[++i]);
         } else if (strcmp(argv[i], "--cmds") == 0 && i + 1 < argc) {
             sbk_input_play_set_cmdfile(argv[++i]);
+        } else if (strcmp(argv[i], "--autoplay") == 0) {
+            sbk_autoplay = 1;
+        } else if (strcmp(argv[i], "--nightmare") == 0) {
+            sbk_nightmare = 1;
+        } else if (strcmp(argv[i], "--soak") == 0) {
+            sbk_autoplay = sbk_soak = 1;
+        } else if (strcmp(argv[i], "--perf") == 0) {
+            sbk_perf_enabled = 1;
         } else if (strcmp(argv[i], "--racedbg") == 0) {
             sbk_race_debug_enabled = 1;
         } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
@@ -140,7 +151,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -179,11 +190,16 @@ int main(int argc, char **argv) {
         double t;
         int idle;
 
-        sbk_sched_run();
+        {
+            /* game = everything the scheduler runs minus the tasks it dispatches */
+            double t0 = sbk_perf_now();
+            sbk_sched_run();
+            sbk_perf_add(SBK_PERF_GAME, sbk_perf_now() - t0);
+        }
 
         if (sbk_vi_swap_serial != presented) {
             presented = sbk_vi_swap_serial;
-            gfx_present();
+            SBK_PERF_TIMED(SBK_PERF_PRESENT, gfx_present());
         }
 
         idle = !sbk_sched_has_runnable() || sbk_poll_fail_count >= SBK_IDLE_POLLS;
@@ -196,6 +212,7 @@ int main(int argc, char **argv) {
             double wait = next_retrace - t;
             if (wait > 2000.0) {
                 SDL_Delay((Uint32)((wait - 1000.0) / 1000.0));
+                sbk_perf_add(SBK_PERF_IDLE, sbk_perf_now() - t);
             }
             continue;
         }
@@ -206,6 +223,11 @@ int main(int argc, char **argv) {
         sbk_vi_retrace();
         sbk_ai_retrace();
         retraces++;
+        sbk_perf_frame();
+        if (sbk_autoplay || sbk_soak || sbk_nightmare) sbk_autoplay_tick(retraces);
+        if (sbk_perf_enabled && retraces % 60 == 0) {
+            sbk_perf_report();
+        }
         if (sbk_race_debug_enabled && retraces % 60 == 0) {
             sbk_race_debug(retraces);
         }
@@ -219,9 +241,9 @@ int main(int argc, char **argv) {
         if (t - next_retrace > 250000.0) {
             next_retrace = t; /* fell far behind (slow frame, window drag): resync the pacing */
         }
-        if (sbk_stat_dma != last_dma) {
+        if (sbk_hash_frames && sbk_stat_dma != last_dma) {
             last_dma = sbk_stat_dma;
-            printf("sbk: retrace %lu: dma=%u\n", retraces, last_dma); /* run-to-run fingerprint */
+            printf("sbk: retrace %lu: dma=%u\n", retraces, last_dma); /* run-to-run fingerprint (--hashframe) */
         }
         if (max_frames != 0 && retraces >= max_frames) {
             break;

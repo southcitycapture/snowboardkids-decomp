@@ -5,6 +5,7 @@
 #include "ultra.h"
 #include <stdio.h>
 #include "sbk_os.h"
+#include "../debug/perf.h"
 
 extern void sbk_gfx_task(OSTask *task);   /* port/src/gfx/gfx_task.c   */
 extern void sbk_audio_task(OSTask *task); /* port/src/audio/audio_task.c */
@@ -13,11 +14,11 @@ static OSTask *sbk_sp_loaded;
 unsigned sbk_task_count;
 
 static void sbk_run_gfx(void *arg) {
-    sbk_gfx_task((OSTask *)arg);
+    SBK_PERF_TIMED(SBK_PERF_GFX, sbk_gfx_task((OSTask *)arg));
 }
 
 static void sbk_run_audio(void *arg) {
-    sbk_audio_task((OSTask *)arg);
+    SBK_PERF_TIMED(SBK_PERF_AUDIO, sbk_audio_task((OSTask *)arg));
 }
 
 void osSpTaskLoad(OSTask *tp) {

@@ -11,6 +11,7 @@ struct GfxWindowManagerAPI {
     void (*swap_buffers)(void);
     double (*get_time)(void);
     void (*shutdown)(void);
+    void (*set_title)(const char *title);
 };
 
 #endif
