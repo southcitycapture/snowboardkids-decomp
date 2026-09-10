@@ -109,6 +109,38 @@ It prints a pass/fail table: a course passes when the replay finishes with the
 same rank *and* the same frame count as the CSV row it was measured from. The
 port is deterministic under scripted input, so any drift is a real regression.
 
+    course   spec                             expected       got            result
+    9        course=9,char=3,board=2,boost=64 rank=1/13124   rank=1/13124   PASS
+    0        course=0,char=1,board=2          rank=1/18066   rank=1/18066   PASS
+    1        course=1,char=3,board=2          rank=1/28002   rank=1/28002   PASS
+    2        course=2,char=1,board=2          rank=1/22436   rank=1/22436   PASS
+    3        course=3,char=1,board=2,boost=64 rank=1/23018   rank=1/23018   PASS
+    4        course=4,char=3,board=1,boost=96 rank=1/21138   rank=1/21138   PASS
+    5        course=5,char=3,board=1,boost=32 rank=1/22696   rank=1/22696   PASS
+    6        course=6,char=4,board=1,boost=64 rank=1/20868   rank=1/20868   PASS
+    8 course(s) checked, 0 failed
+
+### What the rider learned (2026-09-10)
+
+Every course in the game has a setup the CPU rider wins with. `boost` is in
+1/256ths of the character+board top speed; where it is 0 the stock rider
+already wins.
+
+| course | name | char | board | boost | frames |
+|---|---|---|---|---|---|
+| 9 | Rookie Mountain | 3 | 2 | 64 | 13124 |
+| 0 | Big Snowman | 1 | 2 | 0 | 18066 |
+| 1 | Sunset Rock | 3 | 2 | 0 | 28002 |
+| 2 | Night Highway | 1 | 2 | 0 | 22436 |
+| 3 | Grass Valley | 1 | 2 | 64 | 23018 |
+| 4 | Dizzy Land | 3 | 1 | 96 | 21138 |
+| 5 | Quicksand Valley | 3 | 1 | 32 | 22696 |
+| 6 | Silver Mountain | 4 | 1 | 64 | 20868 |
+
+The boost column is not a difficulty dial: because player 1 is a CPU rider it
+is rank-handicapped like the rest of the field (see docs/PLAN.md), so a bigger
+boost can cost places. Course 3 goes 2nd, 4th, 1st at boost 0, 32, 64.
+
 ## Fullscreen
 
 `--fullscreen` switches the display to its desktop mode and draws the N64
