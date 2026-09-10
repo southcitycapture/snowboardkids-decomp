@@ -56,9 +56,17 @@ static inline int16_t clamp16(int32_t v) {
     return (int16_t)v;
 }
 
+int sbk_audio_disabled;
+static uint32_t cur_w0, cur_w1;
+
 static void *dram(uint32_t addr) {
     uint32_t seg = (addr >> 24) & 0xF;
-    return sbk_phys_to_host(rsp.segments[seg] + (addr & 0x00FFFFFFu));
+    uint32_t phys = rsp.segments[seg] + (addr & 0x00FFFFFFu);
+    static int warned;
+    if (phys >= 0x00400000u && warned++ < 8) { /* every audio buffer/state lives in RDRAM */
+        fprintf(stderr, "sbk audio: DRAM address %08x outside RDRAM (cmd %08x %08x)\n", addr, cur_w0, cur_w1);
+    }
+    return sbk_phys_to_host(phys);
 }
 
 /* ---- commands ------------------------------------------------------------ */
@@ -322,8 +330,10 @@ void sbk_audio_task(OSTask *task) {
     unsigned n = task->t.data_size / sizeof(Acmd), i;
     static unsigned unknown_warned;
 
+    if (sbk_audio_disabled) return;
     for (i = 0; i < n; i++, cmd++) {
         uint32_t w0 = cmd->words.w0, w1 = cmd->words.w1;
+        cur_w0 = w0; cur_w1 = w1;
         uint8_t op = (uint8_t)(w0 >> 24);
         uint8_t flags = (uint8_t)(w0 >> 16);
         switch (op) {

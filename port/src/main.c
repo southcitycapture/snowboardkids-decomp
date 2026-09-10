@@ -23,6 +23,9 @@ extern void sbk_game_main(void *arg);
 extern int sbk_rom_load(const char *path);
 extern int sbk_trace;
 extern int sbk_dump_task;
+extern int sbk_dump_frames;
+extern int sbk_dump_tris;
+extern int sbk_audio_disabled;
 extern struct GfxWindowManagerAPI gfx_sdl_gl13_wapi;
 extern struct GfxRenderingAPI gfx_gl13_rapi;
 
@@ -54,7 +57,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0) {
             i++; /* option value */
         }
     }
@@ -107,10 +110,17 @@ int main(int argc, char **argv) {
             sbk_dump_task = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             max_frames = strtoul(argv[++i], NULL, 10); /* quit after N retraces */
+        } else if (strcmp(argv[i], "--dumpframes") == 0 && i + 1 < argc) {
+            sbk_dump_frames = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--hashframe") == 0) {
             sbk_hash_frames = 1; /* fingerprint every presented frame */
         } else if (strcmp(argv[i], "--mute") == 0) {
             sbk_audio_muted = 1;
+        } else if (strcmp(argv[i], "--noaudio") == 0) {
+            sbk_audio_muted = 1;
+            sbk_audio_disabled = 1; /* skip the command-list interpreter entirely */
+        } else if (strcmp(argv[i], "--dumptris") == 0) {
+            sbk_dump_tris = 1;
         } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
             sbk_ai_dump_start(argv[++i]);
         }

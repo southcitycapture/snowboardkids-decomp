@@ -67,6 +67,7 @@ struct TextureHashmapNode {
     const uint8_t *texture_addr;
     const uint8_t *tlut;
     uint32_t size_bytes;
+    uint32_t content_hash; /* of the texel bytes and the palette: this game rewrites scratch textures and scaled palettes in place */
     uint8_t fmt, siz;
     
     uint32_t texture_id;
@@ -276,12 +277,22 @@ static struct ColorCombiner *gfx_lookup_or_create_color_combiner(uint32_t cc_id)
     return prev_combiner = comb;
 }
 
-static bool gfx_texture_cache_lookup(int tile, struct TextureHashmapNode **n, const uint8_t *orig_addr, uint32_t fmt, uint32_t siz, const uint8_t *tlut, uint32_t size_bytes) {
-    size_t hash = (uintptr_t)orig_addr ^ ((uintptr_t)tlut >> 3) ^ (size_bytes << 7);
+static uint32_t content_hash(uint32_t h, const uint8_t *p, uint32_t n) {
+    /* FNV-1a over 32-bit words (the data is 8-byte aligned; n is a multiple of 8) */
+    const uint32_t *w = (const uint32_t *)p;
+    uint32_t i;
+    for (i = 0; i < n / 4; i++) {
+        h = (h ^ w[i]) * 16777619u;
+    }
+    return h;
+}
+
+static bool gfx_texture_cache_lookup(int tile, struct TextureHashmapNode **n, const uint8_t *orig_addr, uint32_t fmt, uint32_t siz, const uint8_t *tlut, uint32_t size_bytes, uint32_t chash) {
+    size_t hash = (uintptr_t)orig_addr ^ ((uintptr_t)tlut >> 3) ^ (size_bytes << 7) ^ chash;
     hash = (hash >> 5) & 0x3ff;
     struct TextureHashmapNode **node = &gfx_texture_cache.hashmap[hash];
     while (*node != NULL && *node - gfx_texture_cache.pool < (int)gfx_texture_cache.pool_pos) {
-        if ((*node)->texture_addr == orig_addr && (*node)->fmt == fmt && (*node)->siz == siz && (*node)->tlut == tlut && (*node)->size_bytes == size_bytes) {
+        if ((*node)->texture_addr == orig_addr && (*node)->fmt == fmt && (*node)->siz == siz && (*node)->tlut == tlut && (*node)->size_bytes == size_bytes && (*node)->content_hash == chash) {
             gfx_rapi->select_texture(tile, (*node)->texture_id);
             *n = *node;
             return true;
@@ -307,6 +318,7 @@ static bool gfx_texture_cache_lookup(int tile, struct TextureHashmapNode **n, co
     (*node)->texture_addr = orig_addr;
     (*node)->tlut = tlut;
     (*node)->size_bytes = size_bytes;
+    (*node)->content_hash = chash;
     (*node)->fmt = fmt;
     (*node)->siz = siz;
     *n = *node;
@@ -499,6 +511,9 @@ static void import_texture_ci8(int tile) {
 }
 
 extern int sbk_tex_dump_left;
+int sbk_tri_dump_all; /* --dumptris: log every triangle of the dumped tasks */
+
+static bool sbk_texture_addr_ok(const void *addr);
 
 static void import_texture(int tile) {
     uint8_t fmt = rdp.texture_tile.fmt;
@@ -517,7 +532,11 @@ static void import_texture(int tile) {
     }
     {
         const uint8_t *key = rdp.loaded_texture[tile].key != NULL ? rdp.loaded_texture[tile].key : rdp.loaded_texture[tile].addr;
-        if (gfx_texture_cache_lookup(tile, &rendering_state.textures[tile], key, fmt, siz, tlut, rdp.loaded_texture[tile].size_bytes)) {
+        uint32_t chash = content_hash(2166136261u, rdp.loaded_texture[tile].addr, rdp.loaded_texture[tile].size_bytes & ~7u);
+        if (tlut != NULL) {
+            chash = content_hash(chash, tlut, siz == G_IM_SIZ_4b ? 32 : 512);
+        }
+        if (gfx_texture_cache_lookup(tile, &rendering_state.textures[tile], key, fmt, siz, tlut, rdp.loaded_texture[tile].size_bytes, chash)) {
             return;
         }
     }
@@ -993,7 +1012,7 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
     
     bool z_is_from_0_to_1 = gfx_rapi->z_is_from_0_to_1();
 
-    if (sbk_tex_dump_left > 0) {
+    if (sbk_tex_dump_left > 0 || sbk_tri_dump_all) {
         static int drawn;
         if (drawn++ < 3000) {
             printf("sbk-tri: cc=%08x tex=%ux%u tile=(%u,%u)-(%u,%u) fmt=%u siz=%u pal=%u om_l=%08x om_h=%08x",
@@ -1202,7 +1221,23 @@ static void gfx_dp_set_scissor(uint32_t mode, uint32_t ulx, uint32_t uly, uint32
     rdp.viewport_or_scissor_changed = true;
 }
 
+/* Every texture this game draws lives in RDRAM (its heaps are inside the 4 MB
+ * window); anything else is a garbage descriptor (e.g. renderCourseTextureMarkers
+ * reading past an asset table) that hardware would load harmlessly and never
+ * show. Skip those instead of dereferencing them. */
+static bool sbk_texture_addr_ok(const void *addr) {
+    uintptr_t a = (uintptr_t)addr;
+    return a >= 0x80000000u && a < 0x80400000u;
+}
+
 static void gfx_dp_set_texture_image(uint32_t format, uint32_t size, uint32_t width, const void* addr) {
+    if (!sbk_texture_addr_ok(addr)) {
+        static int warned;
+        extern unsigned sbk_task_count;
+        if (warned++ < 8) {
+            printf("sbk-gfx: task %u: SETTIMG outside RDRAM (%p), texture skipped\n", sbk_task_count, addr);
+        }
+    }
     rdp.texture_to_load.addr = addr;
     rdp.texture_to_load.siz = size;
     rdp.texture_to_load.width = width + 1; /* G_SETTIMG stores width - 1 */
@@ -1241,6 +1276,7 @@ static void gfx_dp_set_tile_size(uint8_t tile, uint16_t uls, uint16_t ult, uint1
 }
 
 static void gfx_dp_load_tlut(uint8_t tile, uint32_t high_index) {
+    if (!sbk_texture_addr_ok(rdp.texture_to_load.addr)) return; /* garbage SETTIMG: keep the previous texture */
     // TMEM's upper half holds 256 TLUT entries in 16 slots of 16 (each entry
     // occupies 8 bytes there, so a slot is 16 tmem words): gDPLoadTLUT_pal16
     // targets slot (tmem - 256) / 16, gDPLoadTLUT_pal256 fills all of them.
@@ -1258,6 +1294,7 @@ static void gfx_dp_load_tlut(uint8_t tile, uint32_t high_index) {
 }
 
 static void gfx_dp_load_block(uint8_t tile, uint32_t uls, uint32_t ult, uint32_t lrs, uint32_t dxt) {
+    if (!sbk_texture_addr_ok(rdp.texture_to_load.addr)) return; /* garbage SETTIMG: keep the previous texture */
     if (tile == 1) return;
     SUPPORT_CHECK(tile == G_TX_LOADTILE);
     SUPPORT_CHECK(uls == 0);
@@ -1280,8 +1317,20 @@ static void gfx_dp_load_block(uint8_t tile, uint32_t uls, uint32_t ult, uint32_t
             break;
     }
     uint32_t size_bytes = (lrs + 1) << word_size_shift;
+    if (size_bytes > 4096) {
+        /* TMEM is 4 KB; hardware wraps the load. Keep the first 4 KB. */
+        static int warned;
+        extern int sbk_gfx_bad_dl;
+        extern unsigned sbk_task_count;
+        sbk_gfx_bad_dl = 1;
+        if (warned++ < 8) {
+            printf("sbk-gfx: task %u: LOADBLOCK %u bytes (siz %u, lrs %u, width %u, tile %u) at %p, clamped\n",
+                   sbk_task_count, size_bytes, rdp.texture_to_load.siz, lrs, rdp.texture_to_load.width, tile,
+                   (void *)rdp.texture_to_load.addr);
+        }
+        size_bytes = 4096;
+    }
     rdp.loaded_texture[rdp.texture_to_load.tile_number].size_bytes = size_bytes;
-    assert(size_bytes <= 4096 && "bug: too big texture");
     rdp.loaded_texture[rdp.texture_to_load.tile_number].addr = rdp.texture_to_load.addr;
     rdp.loaded_texture[rdp.texture_to_load.tile_number].key = NULL;
     
@@ -1294,6 +1343,7 @@ static void gfx_dp_load_block(uint8_t tile, uint32_t uls, uint32_t ult, uint32_t
 static uint8_t tmem_scratch[2][4096];
 
 static void gfx_dp_load_tile(uint8_t tile, uint32_t uls, uint32_t ult, uint32_t lrs, uint32_t lrt) {
+    if (!sbk_texture_addr_ok(rdp.texture_to_load.addr)) return; /* garbage SETTIMG: keep the previous texture */
     if (tile == 1) return;
     SUPPORT_CHECK(tile == G_TX_LOADTILE);
 
@@ -1321,8 +1371,8 @@ static void gfx_dp_load_tile(uint8_t tile, uint32_t uls, uint32_t ult, uint32_t 
     if (row_bytes > line_bytes) {
         row_bytes = line_bytes;
     }
-    if (h > 8 && ((h - 1) & (h - 2)) == 0) {
-        h -= 1; /* 65 -> 64, 33 -> 32, 17 -> 16: the inclusive overrun row */
+    if (h > 2 && ((h - 1) & (h - 2)) == 0) {
+        h -= 1; /* 65 -> 64, 33 -> 32, 5 -> 4: the inclusive overrun row (the title fade's 16x4 dither is passed as (0,0)-(16,4)) */
     }
     size_bytes = line_bytes * h;
 
