@@ -334,13 +334,18 @@ def plan_arg():
     return ",".join(out)
 
 
-def campaign_start(spec="course=-2", frames=4000000):
-    """A long self-playing session on the experiment pak: the menu monkey keeps
-    the game moving, every race is aimed at the first course still unwon, and
-    --status prints the purse and the win flags as they change."""
+def campaign_start(spec="course=-2", frames=4000000, save_every=1):
+    """A long self-playing session on the experiment pak.
+
+    --autonav drives the menus by name (port/src/debug/menu_nav.c): it parks
+    the Game Menu on EXIT / SAVE after every `save_every` races so the purse
+    actually reaches the pak, and answers every other screen with A. Every race
+    is aimed at the first course still unwon and --status prints the purse and
+    the win flags as they change."""
     g4("stop")
     plan = plan_arg()
-    g4("run", "--play", SCRIPT, "--turbo", "--nightmare", "--status",
+    g4("run", "--play", SCRIPT, "--turbo", "--nightmare", "--status", "--nopad",
+       "--menutrace", "--autonav", "--saveevery", str(save_every),
        "--cmds", CMDS, "--pak", PAK, "--trial", spec, "--plan", plan,
        "--frames", str(frames))
     print("campaign started: spec=%s plan=%s pak=%s" % (spec, plan, PAK), flush=True)

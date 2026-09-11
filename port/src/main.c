@@ -68,7 +68,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0 || strcmp(argv[i], "--saveevery") == 0) {
             i++; /* option value */
         }
     }
@@ -158,6 +158,15 @@ int main(int argc, char **argv) {
             sbk_bigtri_left = 400000;
         } else if (strcmp(argv[i], "--pak") == 0 && i + 1 < argc) {
             pak_path = argv[++i];
+        } else if (strcmp(argv[i], "--autonav") == 0) {
+            extern int sbk_autonav;
+            sbk_autonav = 1;    /* drive the menus by name: race, save, shop */
+        } else if (strcmp(argv[i], "--saveevery") == 0 && i + 1 < argc) {
+            extern int sbk_autonav_every;
+            sbk_autonav_every = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--menutrace") == 0) {
+            extern int sbk_menutrace;
+            sbk_menutrace = 1;
         } else if (strcmp(argv[i], "--nopad") == 0) {
             extern int sbk_nopad;
             sbk_nopad = 1;  /* no gamepad: no Rumble Pak, no stray stick input */

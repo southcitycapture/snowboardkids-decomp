@@ -306,6 +306,8 @@ static void status_tick(unsigned long retraces) {
 
 void sbk_autoplay_tick(unsigned long retraces) {
     static unsigned soak_step;
+    extern void sbk_menu_nav_tick(unsigned long);
+    sbk_menu_nav_tick(retraces);
     status_tick(retraces);
     course_trace(retraces);
     trial_tick(retraces);

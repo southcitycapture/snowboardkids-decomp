@@ -1,0 +1,230 @@
+/* Campaign navigator: getting the self-playing session to *save*.
+ *
+ * The purse only reaches the Controller Pak from the Game Menu's EXIT / SAVE
+ * (race_type_select_menu.c: selection 3, or B, sets gMenuExitSelection and
+ * fades out into the save flow). A monkey pressing A walks from the results
+ * screen straight back into the next race and never stops there, so the
+ * campaign earned money for an hour and saved none of it.
+ *
+ * This file is a *navigator* instead: it knows which screen is up and presses
+ * what that screen needs. The screen is read from the game's own task list --
+ * gActiveGameTaskList is a priority-ordered list of GameTask, each with the
+ * callback it will run next -- and the callbacks are named with dladdr(), so
+ * --menutrace prints the real function names without a hand-written table.
+ *
+ * Never START: a START still queued when a race begins pauses it, and only
+ * another START dismisses the overlay.
+ */
+#include "../ultra/ultra.h"
+#include <stdio.h>
+#include <string.h>
+#include <dlfcn.h>
+#include "game/race/player/race_player_input.h"
+#include "game/race/player/race_player_update.h"
+#include "game/race/race_state.h"
+#include "game/engine/game_task_scheduler.h"
+#include "game/save_data.h"
+#include "game/menu/course_select/course_select_menu.h"
+#include "game/menu/character_select/character_select_menu.h"
+#include "game/menu/main_menu/controller_main_menu_flow.h"
+#include "../platform/input.h"
+
+extern GameTask gActiveGameTaskList;
+extern u8 gHighestUnlockedCourse;
+
+int sbk_menutrace;      /* --menutrace: print the active task callbacks as they change */
+
+/* The callback of the highest-priority active task, plus its name. */
+static GameTaskCallback current_callbacks[8];
+static int current_count;
+
+static void collect_tasks(void) {
+    GameTask *t = gActiveGameTaskList.next;
+    current_count = 0;
+    while (t != NULL && current_count < 8) {
+        current_callbacks[current_count++] = t->callbacks[0];
+        t = t->next;
+    }
+}
+
+const char *sbk_fn_name(void *fn) {
+    static char buf[128];
+    Dl_info info;
+    if (fn == NULL) return "-";
+    if (dladdr(fn, &info) && info.dli_sname != NULL) {
+        snprintf(buf, sizeof(buf), "%s", info.dli_sname);
+        return buf;
+    }
+    snprintf(buf, sizeof(buf), "%p", fn);
+    return buf;
+}
+
+/* True when a task whose next callback is `name` is on the active list. */
+int sbk_menu_on(const char *name) {
+    int i;
+    for (i = 0; i < current_count; i++) {
+        if (strcmp(sbk_fn_name((void *)current_callbacks[i]), name) == 0) return 1;
+    }
+    return 0;
+}
+
+const char *sbk_menu_top(void) {
+    return current_count ? sbk_fn_name((void *)current_callbacks[0]) : "-";
+}
+
+static void menutrace(unsigned long retraces) {
+    static char last[512];
+    char now[512];
+    int i;
+    now[0] = 0;
+    for (i = 0; i < current_count; i++) {
+        strncat(now, sbk_fn_name((void *)current_callbacks[i]), sizeof(now) - strlen(now) - 2);
+        strncat(now, " ", sizeof(now) - strlen(now) - 2);
+    }
+    if (strcmp(now, last) != 0) {
+        snprintf(last, sizeof(last), "%s", now);
+        printf("sbk-menu: r=%lu ms=%d money=%d tasks: %s\n", retraces, gRacePlayers[0].menuState,
+               gRacePlayers[0].money, now);
+        fflush(stdout);
+    }
+}
+
+/* ------------------------------------------------------------------ autonav
+ *
+ * The map of the post-race menus, read out of race_flow.c:
+ * handleRaceSplitscreenSelectFlow branches on gRaceSplitscreenMode, and that
+ * menu (updateRaceSplitscreenSelectMenu, five entries) is the "Game Menu":
+ *
+ *   0, 2 -> the plain course list, i.e. straight into the next race
+ *   1    -> the race type menu
+ *   3    -> the course shop (initCourseSelectMenu, where courses are bought)
+ *   4    -> EXIT / SAVE (initControllerPakRaceRecordSaveFlow, the only path
+ *           that writes the Controller Pak)
+ *
+ * So the navigator does not need to count D-pad presses down the list: it
+ * parks gRaceSplitscreenMode on the entry it wants (the menu's own variable,
+ * the same trick --trial uses for the course cursor) and lets an A press
+ * confirm it, which is the game's normal flow, just aimed.
+ *
+ * Every other screen answers A, and the prompts want YES (stick up) first.
+ * Never START: a queued START pauses the next race, and only another START
+ * clears the overlay.
+ */
+int sbk_autonav;        /* --autonav */
+int sbk_autonav_every = 1;  /* save after every N races */
+
+enum { NAV_RACE = 0, NAV_SAVE = 1, NAV_SHOP = 2 };
+static int nav_want = NAV_RACE;
+static int nav_races, nav_saves;
+static unsigned long nav_last_action;
+
+extern u8 gRaceSplitscreenMode;
+
+/* The shop (gRaceSplitscreenMode 3 -> initCourseSelectMenu).
+ *
+ * Its course grid is three columns of three, and course_select_menu.c builds
+ * the selection from the menu's own cursors:
+ *   menuSelection = gMenuChoicePromptState[0] * 3 + (column) - 6
+ * so course K sits at column K % 3, row K / 3, i.e. cursor
+ * gCharacterSelectHighlightedRosterIndices[0] = K % 3 and
+ * gMenuChoicePromptState[0] = K / 3 + 2. A on a course whose unlock state is
+ * -1 buys it when the purse covers gCourseUnlockPrices[K]. As everywhere else
+ * here, the navigator parks the game's own cursors and presses A.
+ */
+static int nav_buy = -1;        /* the course being bought, -1 = none */
+
+static int nav_pick_course(void) {
+    const GameSaveData *sd = &gGameSaveDataBuffer[0];
+    int best = -1, k;
+    for (k = 0; k < 9; k++) {
+        if (sd->courseUnlockStates[k] != -1) continue;
+        if ((u32)gRacePlayers[0].money < gCourseUnlockPrices[k]) continue;
+        if (best < 0 || gCourseUnlockPrices[k] < gCourseUnlockPrices[best]) best = k;
+    }
+    return best;
+}
+
+/* A race has ended when the results flow comes up; the purse is only in the
+ * pak once the save data's copy matches the rider's. */
+static void nav_watch(void) {
+    static int in_results;
+    int results = sbk_menu_on("updateRaceResultsFlow") || sbk_menu_on("prepareRaceResultsFlow");
+    if (results && !in_results) {
+        nav_races++;
+        if (nav_races % sbk_autonav_every == 0) nav_want = NAV_SAVE;
+        printf("sbk-nav: race %d finished, want=%s\n", nav_races, nav_want == NAV_SAVE ? "SAVE" : "RACE");
+        fflush(stdout);
+    }
+    in_results = results;
+    if (nav_want == NAV_SAVE && (int)gGameSaveDataBuffer[0].money == gRacePlayers[0].money &&
+        gRacePlayers[0].money != 0) {
+        nav_saves++;
+        nav_buy = nav_pick_course();
+        nav_want = nav_buy >= 0 ? NAV_SHOP : NAV_RACE;
+        printf("sbk-nav: saved %d (save #%d)%s\n", gRacePlayers[0].money, nav_saves,
+               nav_buy >= 0 ? " -> shop" : "");
+        if (nav_buy >= 0) {
+            printf("sbk-nav: buying course %d for %u (purse %d)\n", nav_buy,
+                   (unsigned)gCourseUnlockPrices[nav_buy], gRacePlayers[0].money);
+        }
+        fflush(stdout);
+    }
+    if (nav_want == NAV_SHOP && nav_buy >= 0 && gGameSaveDataBuffer[0].courseUnlockStates[nav_buy] != -1) {
+        printf("sbk-nav: course %d bought (purse %d)\n", nav_buy, gRacePlayers[0].money);
+        fflush(stdout);
+        nav_buy = -1;
+        nav_want = NAV_SAVE;   /* a purchase is worth writing to the pak at once */
+    }
+}
+
+static void nav_press(const char *line) {
+    sbk_input_play_add(line);
+}
+
+static void nav_act(unsigned long retraces) {
+    const char *top = sbk_menu_top();
+    if (retraces - nav_last_action < 60) return;
+    nav_last_action = retraces;
+    /* In the shop: park the cursors on the course being bought and press A. */
+    if (sbk_menu_on("updateCourseSelectMenu")) {
+        gCourseSelectModeSelection = (u8)(nav_buy >= 0 ? 1 : 2); /* 1 = buy a course, 2 = leave */
+        nav_press("press A 3");
+        return;
+    }
+    if (sbk_menu_on("updateCourseSelectUnlockCourseList") || sbk_menu_on("updateCourseSelectCourseList")) {
+        if (nav_buy >= 0) {
+            gCharacterSelectHighlightedRosterIndices[0] = (s8)(nav_buy % 3);
+            gMenuChoicePromptState[0] = (s16)(nav_buy / 3 + 2);
+            nav_press("press A 3");
+        } else {
+            nav_press("press B 3");
+        }
+        return;
+    }
+    if (sbk_menu_on("updateRaceSplitscreenSelectMenu")) {
+        gRaceSplitscreenMode = (u8)(nav_want == NAV_SAVE ? 4 : nav_want == NAV_SHOP ? 3 : 0);
+        nav_press("press A 3");
+        return;
+    }
+    /* Prompts (the pak flow's ARE YOU SURE? / DATA SAVE) want YES, which is up. */
+    if (strstr(top, "Prompt") != NULL || strstr(top, "ControllerPak") != NULL ||
+        strstr(top, "Confirm") != NULL) {
+        nav_press("stick 0 80 3");
+        nav_press("wait 6");
+        nav_press("press A 3");
+        return;
+    }
+    nav_press("press A 3");
+}
+
+void sbk_menu_nav_tick(unsigned long retraces) {
+    collect_tasks();
+    if (sbk_menutrace) menutrace(retraces);
+    if (!sbk_autonav) return;
+    nav_watch();
+    if (sbk_menu_on("updateRaceGameplayFlow") || sbk_menu_on("startRaceGameplayFlow") ||
+        sbk_menu_on("fadeInRaceGameplayViewports") || sbk_menu_on("fadeOutRaceStartTransitionFlow")) {
+        return;                 /* a race is under way: hands off the pad */
+    }
+    nav_act(retraces);
+}
