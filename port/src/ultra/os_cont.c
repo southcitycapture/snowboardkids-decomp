@@ -81,23 +81,35 @@ void osContGetReadData(OSContPad *data) {
     memcpy(data, sbk_cont_pad, sizeof(sbk_cont_pad));
 }
 
-/* ---- Rumble Pak: absent ------------------------------------------------- */
+/* ---- Rumble Pak: the gamepad's rumble, on port 1 -------------------------
+ * A real N64 cannot hold a Rumble Pak and a Controller Pak in one controller,
+ * which is why the game asks to swap them; here both are always present, so
+ * every prompt passes at once and saving still works. */
+
+static unsigned motor_log;
 
 s32 osMotorInit(OSMesgQueue *mq, OSPfs *pfs, int channel) {
     (void)mq;
     memset(pfs, 0, sizeof(*pfs));
     pfs->channel = channel;
-    return PFS_ERR_NOPACK;
+    if (channel != 0 || !sbk_input_rumble_supported()) {
+        return PFS_ERR_NOPACK;
+    }
+    pfs->status = PFS_MOTOR_INITIALIZED;
+    return 0;
 }
 
 s32 osMotorStart(OSPfs *pfs) {
-    (void)pfs;
-    return PFS_ERR_NOPACK;
+    if (pfs->channel != 0 || !sbk_input_rumble_supported()) return PFS_ERR_NOPACK;
+    if (motor_log++ < 4) printf("sbk: rumble on\n");
+    sbk_input_rumble(1);
+    return 0;
 }
 
 s32 osMotorStop(OSPfs *pfs) {
-    (void)pfs;
-    return PFS_ERR_NOPACK;
+    if (pfs->channel != 0 || !sbk_input_rumble_supported()) return PFS_ERR_NOPACK;
+    sbk_input_rumble(0);
+    return 0;
 }
 
 /* Controller Pak: see os_pfs.c (libultra's own pfs code over a file-backed image). */

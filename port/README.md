@@ -20,7 +20,7 @@ a fixed-function OpenGL 1.3 backend, scripted input.
 | Gamepad: SDL game-controller layer, hot-plug, raw fallback with mapping log | built, untested (no pad seen on USB yet) |
 | Fullscreen: exclusive mode, 4:3 letterbox, Cmd+Return/Cmd+F/F11 toggle, on by default from the Finder | done |
 | Gamepad: SDL game controllers (HID pads) and Xbox One pads over USB via IOKit | done |
-| Rumble | next |
+| Rumble Pak: the pad's rumble (Xbox GIP packet or SDL haptic) behind osMotorInit/Start/Stop | done |
 
 Scripted input is deterministic: `--play` a text script or a Mupen `.m64`
 movie, `--record` one from a keyboard session, and two runs of the same script
@@ -187,6 +187,12 @@ IOHIDManager shim for the 10.4 SDK).
 
 Mapping: left stick = stick, A = A, B and X = B, Y = C-down (item), triggers
 = Z, LB/RB = L/R, Menu/View = Start, D-pad = D-pad, right stick = C buttons.
+
+The Rumble Pak is the pad's own rumble: `osMotorInit` reports a pak on port 1
+whenever the pad can rumble, Start/Stop drive it (a GIP rumble packet on Xbox
+pads, SDL haptic rumble otherwise). A Controller Pak and a Rumble Pak are both
+present at once here, which a real controller cannot do, so every swap prompt
+passes immediately.
 
 ## Fullscreen
 

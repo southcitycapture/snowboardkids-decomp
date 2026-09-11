@@ -22,5 +22,7 @@ void sbk_input_play_poll(void);
 void sbk_input_play_add(const char *line);
 union SDL_Event;
 void sbk_input_joy_event(const union SDL_Event *ev);
+int sbk_input_rumble_supported(void);
+void sbk_input_rumble(int on);
 
 #endif

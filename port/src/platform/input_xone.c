@@ -243,6 +243,22 @@ void sbk_xone_get(struct sbk_xone_state *out) {
     *out = state;
 }
 
+/* GIP rumble: 0x09 report, motor mask 0x0F (both triggers and both motors),
+ * strengths 0..100, on/off periods in 10 ms units, repeat count. The N64
+ * Rumble Pak is a plain on/off motor, so on = a long pulse, off = zero. */
+void sbk_xone_rumble(int strong, int weak) {
+    uint8_t pkt[13] = { 0x09, 0x00, 0x00, 0x09, 0x00, 0x0F, 0x00, 0x00, 0, 0, 0xFF, 0x00, 0xFF };
+    if (!present || xintf == NULL) return;
+    if (strong > 100) strong = 100;
+    if (weak > 100) weak = 100;
+    pkt[6] = (uint8_t)(strong / 2);   /* light trigger buzz too */
+    pkt[7] = (uint8_t)(strong / 2);
+    pkt[8] = (uint8_t)strong;
+    pkt[9] = (uint8_t)weak;
+    if (strong == 0 && weak == 0) { pkt[6] = pkt[7] = 0; pkt[10] = 0; pkt[12] = 0; }
+    send_packet(pkt, sizeof(pkt));
+}
+
 void sbk_xone_close(void) {
     if (xintf != NULL) {
         (*xintf)->USBInterfaceClose(xintf); /* aborts the reader's ReadPipe */

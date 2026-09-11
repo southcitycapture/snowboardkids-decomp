@@ -92,7 +92,9 @@ session, so headless render tests do not need the console runner.
    scissor; window cleared black per frame). FULLSCREEN_DESKTOP costs ~8 ms per
    present at 1680x1050, exclusive ~3 ms. A connected VNC client stalls every
    swap ~120 ms about once a second (AppleVNCServer reading the surface).
-   Next: gamepad, then Rumble Pak.
+   Gamepad DONE 2026-09-11 (SDL controllers + an IOKit driver for Xbox One pads,
+   port/src/platform/input_xone.c). Rumble Pak DONE 2026-09-11: osMotor* over the
+   pad's rumble (GIP packet 0x09 on Xbox pads, SDL haptic otherwise).
 5. **Letting the CPU rider learn the game** (2026-09-10 night): `--trial
    course=,char=,board=,action=,item=,boost=,money=,quit=` runs one measured
    race headless (~30 s on the G4 at 12x) and prints one result line;

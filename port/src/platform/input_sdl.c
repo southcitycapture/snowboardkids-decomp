@@ -22,6 +22,7 @@
 
 static SDL_GameController *sbk_pad;
 static SDL_Joystick *sbk_joy;      /* raw fallback, or the controller's joystick for logging */
+static SDL_Haptic *sbk_haptic;     /* rumble on an SDL pad, if it has it */
 static int sbk_quit;
 static uint16_t sbk_buttons;
 static int8_t sbk_stick_x, sbk_stick_y;
@@ -48,11 +49,36 @@ static void open_pad(int index) {
         }
     }
     sbk_pad_log_left = 200;
+    if (sbk_joy != NULL && SDL_JoystickIsHaptic(sbk_joy)) {
+        sbk_haptic = SDL_HapticOpenFromJoystick(sbk_joy);
+        if (sbk_haptic != NULL && SDL_HapticRumbleInit(sbk_haptic) != 0) {
+            SDL_HapticClose(sbk_haptic);
+            sbk_haptic = NULL;
+        }
+        if (sbk_haptic != NULL) printf("sbk: gamepad rumble available\n");
+    }
+}
+
+/* Rumble Pak: a pad that can rumble counts as a plugged-in pak. */
+int sbk_input_rumble_supported(void) {
+    return sbk_haptic != NULL || sbk_xone_present();
+}
+
+void sbk_input_rumble(int on) {
+    static int last = -1;
+    if (on == last) return;
+    last = on;
+    if (sbk_xone_present()) {
+        sbk_xone_rumble(on ? 70 : 0, on ? 70 : 0);
+    } else if (sbk_haptic != NULL) {
+        if (on) SDL_HapticRumblePlay(sbk_haptic, 0.7f, 5000);
+        else SDL_HapticRumbleStop(sbk_haptic);
+    }
 }
 
 void sbk_input_init(void) {
     int i;
-    if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {
+    if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) != 0) {
         printf("sbk: no joystick subsystem: %s\n", SDL_GetError());
         return;
     }

@@ -14,5 +14,6 @@ int sbk_xone_open(void);            /* 1 if an Xbox One pad was opened */
 int sbk_xone_present(void);
 void sbk_xone_get(struct sbk_xone_state *out);
 void sbk_xone_close(void);
+void sbk_xone_rumble(int strong, int weak); /* 0..100 each; 0,0 stops */
 
 #endif
