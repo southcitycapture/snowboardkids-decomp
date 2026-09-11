@@ -20,6 +20,7 @@ mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
 cp "$exe" "$out/Contents/MacOS/isle"
 chmod 755 "$out/Contents/MacOS/isle"
 cp "$rom" "$out/Contents/Resources/snowboardkids.z64"
+cp "$here/../resources/SnowboardKids.icns" "$out/Contents/Resources/SnowboardKids.icns"
 cat > "$out/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -27,6 +28,7 @@ cat > "$out/Contents/Info.plist" <<EOF
 <dict>
 	<key>CFBundleDevelopmentRegion</key><string>English</string>
 	<key>CFBundleExecutable</key><string>isle</string>
+	<key>CFBundleIconFile</key><string>SnowboardKids</string>
 	<key>CFBundleIdentifier</key><string>com.southcitycapture.snowboardkids</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>Snowboard Kids</string>
