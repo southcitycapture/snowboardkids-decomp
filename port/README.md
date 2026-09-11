@@ -35,7 +35,7 @@ end on the same frame hash (`--frames N --hashframe`).
     snowboardkids [--fullscreen] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64]
                   [--frames N] [--hashframe] [--mute] [--noaudio] [--wav OUT.wav]
                   [--pak FILE.mpk] [--cmds FILE] [--trace] [--dumpdl N] [--dumpframes N]
-                  [--dumptris] [--racedbg] [--peek ADDR:LEN] [--perf]
+                  [--dumptris] [--bigtri N] [--racedbg] [--peek ADDR:LEN] [--perf]
                   [--autoplay] [--soak] [--nightmare] [--trial SPEC]
                   [--status] [--coursetrace] [rom.z64]
 
@@ -210,6 +210,14 @@ G4's own display does not have this.
 
 The Controller Pak lives at `~/Library/Application Support/SnowboardKids/controller-pak-1.mpk`,
 the raw 32 KB layout emulators use, so saves can move both ways.
+
+`--bigtri N` logs every on-screen triangle covering more than N pixels with the
+modelview matrix, the `G_MTX` address it came from and the `G_VTX` source array;
+`--dumptris` lines carry the same fields. Looking a `vtx=` address up in
+`build/snowboardkids.map` names the game function that drew it. That is how the
+"stretched model at an item hit" report was traced to the game's own pickup
+shards (see `docs/PLAN.md`) -- the retail ROM in mupen64plus draws the same
+panels, so it is not a port bug.
 
 Design notes, survey facts and the gotchas are in `docs/PLAN.md`.
 

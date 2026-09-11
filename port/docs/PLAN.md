@@ -180,14 +180,62 @@ include those files.
 
 ## Open observations (2026-09-11 night)
 
-- "Stretched model" at item hits: `--dumpon` captures show flat beige
-  triangles at the rider when hit. They are the game's snow-chunk sprites
-  (32x32 CI4 at 0x80237f40, palette index 6 = opaque light beige for 84% of
-  texels), spawned by the spark-burst effect at the rider and drawn next to
-  the camera during the lift animation. Display list, texture and render
-  state (fog + texture edge) look intended. Not verified against hardware;
-  compare in an emulator with a controllable input plugin if it still looks
-  wrong.
+- **"Stretched model" at item hits: settled 2026-09-11, it is not a port bug.**
+  The large tan/beige polygons that appear around the rider for a fraction of a
+  second are the game's own *pickup shards*: when a rider rides through an item
+  panel, `updateRacePickup` calls `spawnPickupShardParticle` eight times and
+  `renderPickupShardParticle`
+  (src/race/course/race_course_props_and_pickups.c:1593) draws eight of the
+  panel-box's own 20x20 faces (`gRacePickupTopVertices`, quads of +/-10 units)
+  flying outward at 4 units per frame for `timer = 0xA` = 10 game frames. The
+  camera sits about 50 units behind the rider, so a shard aimed at the camera
+  reaches ~25 units from the eye and covers about a fifth of the screen width
+  before it expires. The texture is asset 0x22 of `gAssetHandles[0x1C]`
+  (32x32 CI4 at 0x80237f40 with the 16-entry TLUT at 0x802342a0): a bevelled
+  cream panel, 84% palette index 6 = RGBA5551 0xff71 = (255,238,197), shaded by
+  the face's vertex colour 0xcd or 0x9b, giving exactly the (205,192,158) and
+  (155,145,120) measured in the frame dumps.
+
+  Verified, not assumed:
+  * *Which draw*: a point-in-triangle test over `--dumptris` for the tan pixels
+    of the dumped frame lands on `vtx=0x800d9398` = `gRacePickupTopVertices+0x40`
+    with `tex=32x32@0x80237f40`, i.e. `renderPickupShardParticle`.
+  * *The quads are not distorted*: reconstructing eye space from the dumped
+    screen coordinates and w of one shard gives two adjacent edges of equal
+    length, 20 units, with dZ/dw = 2 (the game's projection), so the fixed-point
+    `G_MTX` decode and the vertex transform are right.
+  * *The texture decode is right*: `--peek 80237f40` / `--peek 802342a0` rebuild
+    a clean bevelled panel and a wood-crate palette (brown ramp, reds, blues).
+  * *Count and lifetime are right*: eight quads, present for exactly ten
+    presented frames, matching `timer = 0xA` at 30 Hz.
+  * **The reference shows the same thing.** mupen64plus on the retail ROM, its
+    title demo race screenshotted every ten VI frames, produces frames with the
+    same tan panels across the rider right after the flower-cloud item -- the
+    same shapes, the same colour, the same moment as the port's
+    `g4-shots/st-nm-05.png`. Kept as `g4-shots/ref-n64-shards-1.png` and
+    `-2.png` next to the port's `g4-shots/port-shards-task17173.png`.
+
+  So the port is faithful here and nothing was changed in the renderer. What the
+  effect really looks like is the item box bursting open past the camera; it
+  reads as a stuck, stretched model because the panels are big, flat and
+  untextured-looking.
+
+- `nightmare_search.py regress` is no longer a clean 8/8 and it is not the
+  renderer's fault. Measured 2026-09-11 on the unchanged binary as well as the
+  instrumented one: course 0 comes in at 18114 frames instead of the recorded
+  18066 on *every* run of both builds, so that golden row is simply stale; and
+  courses 2, 4 and 6 drift in and out (course 4 went FAIL, FAIL, PASS on the
+  same binary), so the replay is not as deterministic as the golden rows assume
+  once the trial is driven back to back on a loaded machine. Rerecord the rows
+  before trusting a FAIL, and do not read a single regress run as a renderer
+  regression.
+
+- Debug tooling added while chasing this: `--bigtri N` logs every on-screen
+  triangle whose screen area exceeds N pixels together with the modelview
+  matrix, the address of the `G_MTX` it came from and the `G_VTX` source, and
+  `--dumptris` lines now carry the same `mtx=`/`vtx=`/`gm=` fields. Matching a
+  `vtx=` address against `build/snowboardkids.map` names the drawing function
+  in one step; that is what identified the shards.
 - Gamepad: SDL now has the IOKit joystick driver (build-tiger-joy), but the
   controller the user plugged in did not appear on either USB bus (`ioreg -p
   IOUSB` shows only the keyboard hub, keyboard and mouse). Check the cable or

@@ -68,7 +68,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0) {
             i++; /* option value */
         }
     }
@@ -151,6 +151,10 @@ int main(int argc, char **argv) {
             sbk_audio_disabled = 1; /* skip the command-list interpreter entirely */
         } else if (strcmp(argv[i], "--dumptris") == 0) {
             sbk_dump_tris = 1;
+        } else if (strcmp(argv[i], "--bigtri") == 0 && i + 1 < argc) {
+            extern int sbk_bigtri_area, sbk_bigtri_left;
+            sbk_bigtri_area = atoi(argv[++i]);
+            sbk_bigtri_left = 400000;
         } else if (strcmp(argv[i], "--pak") == 0 && i + 1 < argc) {
             pak_path = argv[++i];
         } else if (strcmp(argv[i], "--peek") == 0 && i + 1 < argc) {

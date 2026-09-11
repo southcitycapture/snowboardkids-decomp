@@ -515,6 +515,12 @@ static void import_texture_ci8(int tile) {
 
 extern int sbk_tex_dump_left;
 int sbk_tri_dump_all; /* --dumptris: log every triangle of the dumped tasks */
+int sbk_bigtri_area;  /* --bigtri N: log any on-screen triangle covering more than N pixels */
+int sbk_bigtri_left;  /* remaining lines to log */
+static const void *sbk_last_mtx_addr;
+static uint8_t sbk_last_mtx_params;
+static const void *sbk_last_vtx_addr;
+static unsigned sbk_last_vtx_n, sbk_last_vtx_v0;
 int sbk_tri_drawn;    /* triangles logged since the last arm (cap 6000) */
 
 static bool sbk_texture_addr_ok(const void *addr);
@@ -627,6 +633,8 @@ static void gfx_matrix_mul(float res[4][4], const float a[4][4], const float b[4
 
 static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
     float matrix[4][4];
+    sbk_last_mtx_addr = addr;
+    sbk_last_mtx_params = parameters;
 #ifndef GBI_FLOATS
     // Original GBI where fixed point matrices are used
     for (int i = 0; i < 4; i++) {
@@ -679,6 +687,9 @@ static float gfx_adjust_x_for_aspect_ratio(float x) {
 }
 
 static void gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *vertices) {
+    sbk_last_vtx_addr = vertices;
+    sbk_last_vtx_n = (unsigned)n_vertices;
+    sbk_last_vtx_v0 = (unsigned)dest_index;
     for (size_t i = 0; i < n_vertices; i++, dest_index++) {
         const Vtx_t *v = &vertices[i].v;
         const Vtx_tn *vn = &vertices[i].n;
@@ -1032,6 +1043,38 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
     
     bool z_is_from_0_to_1 = gfx_rapi->z_is_from_0_to_1();
 
+    if (sbk_bigtri_area > 0 && sbk_bigtri_left > 0 &&
+        v_arr[0]->w > 0.0f && v_arr[1]->w > 0.0f && v_arr[2]->w > 0.0f) {
+        float sx[3], sy[3];
+        float area;
+        for (int k = 0; k < 3; k++) {
+            sx[k] = v_arr[k]->x / v_arr[k]->w * HALF_SCREEN_WIDTH + HALF_SCREEN_WIDTH;
+            sy[k] = -v_arr[k]->y / v_arr[k]->w * HALF_SCREEN_HEIGHT + HALF_SCREEN_HEIGHT;
+        }
+        area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sx[2] - sx[0]) * (sy[1] - sy[0]);
+        if (area < 0) area = -area;
+        area *= 0.5f;
+        if (area > (float)sbk_bigtri_area) {
+            const float (*mv)[4] = rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1];
+            sbk_bigtri_left--;
+            printf("sbk-bigtri: area=%.0f cc=%08x tex=%ux%u@%p fmt=%u siz=%u pal=%u om_l=%08x om_h=%08x gm=%08x mtx=%p(p%02x) vtx=%p(n%u v0%u) stk=%u",
+                   area, (unsigned)cc_id, tex_width, tex_height, (const void *)rdp.loaded_texture[0].addr,
+                   rdp.texture_tile.fmt, rdp.texture_tile.siz, rdp.texture_tile.palette,
+                   (unsigned)rdp.other_mode_l, (unsigned)rdp.other_mode_h, (unsigned)rsp.geometry_mode,
+                   sbk_last_mtx_addr, sbk_last_mtx_params, sbk_last_vtx_addr, sbk_last_vtx_n, sbk_last_vtx_v0,
+                   rsp.modelview_matrix_stack_size);
+            for (int k = 0; k < 3; k++) {
+                printf(" v%d=(%.1f,%.1f,w%.1f uv %d,%d rgba %02x%02x%02x%02x)", k, sx[k], sy[k], v_arr[k]->w,
+                       (int)v_arr[k]->u, (int)v_arr[k]->v,
+                       v_arr[k]->color.r, v_arr[k]->color.g, v_arr[k]->color.b, v_arr[k]->color.a);
+            }
+            printf(" mv=[");
+            for (int r = 0; r < 4; r++)
+                printf("%s%.3f,%.3f,%.3f,%.3f", r ? " | " : "", mv[r][0], mv[r][1], mv[r][2], mv[r][3]);
+            printf("]\n");
+        }
+    }
+
     if (sbk_tex_dump_left > 0 || sbk_tri_dump_all) {
         extern int sbk_tri_drawn;
         int *drawnp = &sbk_tri_drawn;
@@ -1047,8 +1090,11 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
                        v_arr[k]->w, (int)v_arr[k]->u, (int)v_arr[k]->v,
                        v_arr[k]->color.r, v_arr[k]->color.g, v_arr[k]->color.b, v_arr[k]->color.a);
             }
-            printf(" prim=%02x%02x%02x%02x env=%02x%02x%02x%02x\n", rdp.prim_color.r, rdp.prim_color.g, rdp.prim_color.b, rdp.prim_color.a,
-                   rdp.env_color.r, rdp.env_color.g, rdp.env_color.b, rdp.env_color.a);
+            printf(" prim=%02x%02x%02x%02x env=%02x%02x%02x%02x mtx=%p(p%02x) vtx=%p(n%u v0%u) gm=%08x\n",
+                   rdp.prim_color.r, rdp.prim_color.g, rdp.prim_color.b, rdp.prim_color.a,
+                   rdp.env_color.r, rdp.env_color.g, rdp.env_color.b, rdp.env_color.a,
+                   sbk_last_mtx_addr, sbk_last_mtx_params, sbk_last_vtx_addr, sbk_last_vtx_n, sbk_last_vtx_v0,
+                   (unsigned)rsp.geometry_mode);
         }
     }
     
