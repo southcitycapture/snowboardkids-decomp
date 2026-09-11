@@ -178,9 +178,73 @@ static void map_stick(int ax, int ay, int8_t *x, int8_t *y) {
     *y = (int8_t)my;
 }
 
+/* --- the UI's own input tap ---------------------------------------------
+ * The launcher runs before the game exists and the overlay runs while it is
+ * paused, so neither can go through the N64 controller path. Both read the
+ * keyboard and the pad here directly. */
+int sbk_ui_owns_input;
+
+void sbk_ui_input_raw(struct SbkUiRaw *r) {
+    const Uint8 *k = SDL_GetKeyboardState(NULL);
+    memset(r, 0, sizeof(*r));
+    r->up = k[SDL_SCANCODE_UP] || k[SDL_SCANCODE_W];
+    r->down = k[SDL_SCANCODE_DOWN] || k[SDL_SCANCODE_S];
+    r->left = k[SDL_SCANCODE_LEFT] || k[SDL_SCANCODE_A];
+    r->right = k[SDL_SCANCODE_RIGHT] || k[SDL_SCANCODE_D];
+    r->accept = k[SDL_SCANCODE_RETURN] || k[SDL_SCANCODE_KP_ENTER] || k[SDL_SCANCODE_SPACE] || k[SDL_SCANCODE_Z];
+    r->cancel = k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_X] || k[SDL_SCANCODE_BACKSPACE];
+    r->menu = k[SDL_SCANCODE_F1];
+
+    if (sbk_pad != NULL) {
+        int lx = SDL_GameControllerGetAxis(sbk_pad, SDL_CONTROLLER_AXIS_LEFTX);
+        int ly = SDL_GameControllerGetAxis(sbk_pad, SDL_CONTROLLER_AXIS_LEFTY);
+        if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_DPAD_UP) || ly < -12000) r->up = 1;
+        if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_DPAD_DOWN) || ly > 12000) r->down = 1;
+        if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_DPAD_LEFT) || lx < -12000) r->left = 1;
+        if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || lx > 12000) r->right = 1;
+        if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_A)) r->accept = 1;
+        if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_B)) r->cancel = 1;
+        if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_BACK)) r->menu = 1;
+    } else if (sbk_xone_present()) {
+        struct sbk_xone_state xs;
+        sbk_xone_get(&xs);
+        if ((xs.dpad & 0x01) || xs.ly > 12000) r->up = 1;
+        if ((xs.dpad & 0x02) || xs.ly < -12000) r->down = 1;
+        if ((xs.dpad & 0x04) || xs.lx < -12000) r->left = 1;
+        if ((xs.dpad & 0x08) || xs.lx > 12000) r->right = 1;
+        if (xs.buttons & 0x10) r->accept = 1;
+        if (xs.buttons & 0x20) r->cancel = 1;
+        if (xs.buttons & 0x08) r->menu = 1;   /* View */
+    } else if (sbk_joy != NULL) {
+        int lx = SDL_JoystickGetAxis(sbk_joy, 0), ly = SDL_JoystickGetAxis(sbk_joy, 1);
+        if (ly < -12000) r->up = 1;
+        if (ly > 12000) r->down = 1;
+        if (lx < -12000) r->left = 1;
+        if (lx > 12000) r->right = 1;
+        if (SDL_JoystickGetButton(sbk_joy, 0)) r->accept = 1;
+        if (SDL_JoystickGetButton(sbk_joy, 1)) r->cancel = 1;
+        if (SDL_JoystickGetButton(sbk_joy, 6)) r->menu = 1;
+        if (SDL_JoystickNumHats(sbk_joy) > 0) {
+            Uint8 h = SDL_JoystickGetHat(sbk_joy, 0);
+            if (h & SDL_HAT_UP) r->up = 1;
+            if (h & SDL_HAT_DOWN) r->down = 1;
+            if (h & SDL_HAT_LEFT) r->left = 1;
+            if (h & SDL_HAT_RIGHT) r->right = 1;
+        }
+    }
+}
+
 void sbk_input_update(void) {
     const Uint8 *k = SDL_GetKeyboardState(NULL);
     uint16_t b = 0;
+
+    if (sbk_ui_owns_input) {
+        /* the overlay is open: the game sees a controller nobody is holding */
+        sbk_buttons = 0;
+        sbk_stick_x = 0;
+        sbk_stick_y = 0;
+        return;
+    }
 
     if (k[SDL_SCANCODE_Z]) b |= CONT_A;
     if (k[SDL_SCANCODE_X]) b |= CONT_B;
@@ -210,7 +274,7 @@ void sbk_input_update(void) {
         if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_X)) b |= CONT_B;
         if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_Y)) b |= CONT_D; /* C-down: the item button */
         if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_START)) b |= CONT_START;
-        if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_BACK)) b |= CONT_START;
+        /* BACK/View is the overlay button (sbk_ui_input_raw), not Start. */
         if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) b |= CONT_L;
         if (SDL_GameControllerGetButton(sbk_pad, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) b |= CONT_R;
         if (SDL_GameControllerGetAxis(sbk_pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000) b |= CONT_G;
@@ -234,7 +298,7 @@ void sbk_input_update(void) {
         if (xs.buttons & 0x40) b |= CONT_B;
         if (xs.buttons & 0x80) b |= CONT_D;     /* Y: C-down, the item button */
         if (xs.buttons & 0x04) b |= CONT_START; /* menu */
-        if (xs.buttons & 0x08) b |= CONT_START; /* view */
+        /* 0x08 View is the overlay button (sbk_ui_input_raw), not Start. */
         if (xs.dpad & 0x10) b |= CONT_L;
         if (xs.dpad & 0x20) b |= CONT_R;
         if (xs.lt > 256 || xs.rt > 256) b |= CONT_G;

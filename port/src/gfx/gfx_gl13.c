@@ -23,6 +23,7 @@
 
 #include "gfx_cc.h"
 #include "gfx_rendering_api.h"
+#include "../ui/ui.h"
 
 #define MAX_UNITS 6
 #define MAX_PROGRAMS 128
@@ -671,6 +672,8 @@ static void hash_frame(void) {
 }
 
 static void gl13_finish_render(void) {
+    /* The options overlay goes on last, over the finished frame. */
+    sbk_ui_overlay_draw(out_win_w, out_win_h, out_x, out_y, out_w, out_h);
     if (sbk_hash_frames) {
         hash_frame();
     }

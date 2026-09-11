@@ -300,6 +300,13 @@ int main(int argc, char **argv) {
     }
     sbk_audio_out_init();
 
+    if (!sbk_launcher_run()) {
+        printf("sbk: quit from the launcher\n");
+        sbk_audio_out_shutdown();
+        SDL_Quit();
+        return 0;
+    }
+
     /* Boot: the game creates its boot thread and starts it. */
     printf("sbk: booting game (image at %p, RDRAM at 0x%08x)\n", (void *)main, SBK_RDRAM_BASE);
     sbk_game_main(NULL);
@@ -344,6 +351,7 @@ int main(int argc, char **argv) {
         }
 
         gfx_handle_events();
+        sbk_ui_overlay_tick();
         sbk_input_play_poll();
         sbk_input_update();
         sbk_vi_retrace();
