@@ -1,0 +1,9 @@
+# Build-time patches applied to the mirrored game sources (tools/mirror_src.py).
+# Format: path<TAB>old text<TAB>new text; the old text must occur exactly once.
+# Upstream files are never modified. Keep this list short and explain each entry.
+#
+# Draw distance (--drawdistance N): the race projection's far plane and the
+# camera-distance cull for props/effects scale with sbk_far_scale (port_stubs.c).
+src/engine/viewport_manager.c	        2800.0f,	        2800.0f * sbk_far_scale,
+src/engine/viewport_manager.c	        (f32)farClip,	        (f32)farClip * sbk_far_scale,
+src/math/spatial_math.c	#define RACE_VIEWPORT_CAMERA_CULL_RANGE 0xBA00000	#define RACE_VIEWPORT_CAMERA_CULL_RANGE ((s32)(0xBA00000 * sbk_far_scale))

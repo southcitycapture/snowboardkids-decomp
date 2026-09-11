@@ -12,6 +12,7 @@ IDO/N64-isms the port cannot absorb elsewhere:
     mirror_src.py --pins pins.txt src/x.c build/gen/src/x.c
 """
 import argparse
+import os
 import re
 
 # Column-0 lines that cannot be a global definition.
@@ -81,8 +82,27 @@ def main():
     # every twin so the startup copy (gen_pins.py) can use it.
     for name in renamed:
         out.append("const unsigned long %s__sbk_size = sizeof(%s%s);\n" % (name, name, args.suffix))
+    # Port patches: exact-text substitutions listed in port/patches.txt as
+    #   relative/path.c\told text\tnew text
+    # applied to the mirrored copy only. Each must match exactly once.
+    text = "".join(out)
+    patches = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "patches.txt")
+    # key on the destination inside the gen tree (the source may be a textconv temp file)
+    dst_abs = os.path.abspath(args.dst).replace(os.sep, "/")
+    rel = dst_abs.split("/gen/", 1)[1] if "/gen/" in dst_abs else os.path.relpath(os.path.abspath(args.src), os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    if os.path.exists(patches):
+        with open(patches) as pf:
+            for line in pf:
+                if not line.strip() or line.startswith("#"):
+                    continue
+                path, old, new = line.rstrip("\n").split("\t")
+                if path != rel:
+                    continue
+                if text.count(old) != 1:
+                    raise SystemExit("patches.txt: %s: expected exactly one match for %r, found %d" % (path, old, text.count(old)))
+                text = text.replace(old, new)
     with open(args.dst, "w") as f:
-        f.writelines(out)
+        f.write(text)
 
 
 if __name__ == "__main__":

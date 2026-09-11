@@ -38,3 +38,6 @@ unsigned long long __d_to_ull(double d) { return (unsigned long long)d; }
 /* The RSP microcode symbols (rspbootTextStart, aspMainTextStart,
  * gF3dlxMicrocodeText) come from rom_syms.s at their N64 addresses; the game
  * only subtracts them to size the boot ucode. */
+
+/* --drawdistance N: scales the race far plane and the prop cull range (see port/patches.txt) */
+float sbk_far_scale = 1.0f;

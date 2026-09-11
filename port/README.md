@@ -272,6 +272,15 @@ pads, SDL haptic rumble otherwise). A Controller Pak and a Rumble Pak are both
 present at once here, which a real controller cannot do, so every swap prompt
 passes immediately.
 
+## Draw distance
+
+`--drawdistance N` multiplies the race projection's far plane (2800 units)
+and the camera-distance cull for props and effects. This is the one place the
+port changes game code: `port/patches.txt` lists exact-text substitutions
+that `tools/mirror_src.py` applies to the mirrored copies at build time
+(upstream files are never touched), turning the two constants into
+`constant * sbk_far_scale`. Cost at 4x on the G4: about +0.1 ms per frame.
+
 ## Fullscreen
 
 `--fullscreen` switches the display to its desktop mode and draws the N64

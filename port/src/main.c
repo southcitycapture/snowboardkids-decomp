@@ -28,6 +28,7 @@ extern int sbk_dump_tris;
 extern int sbk_audio_disabled;
 extern int sbk_race_debug_enabled;
 int sbk_pak_open(const char *path);
+extern float sbk_far_scale;
 #include "debug/perf.h"
 int sbk_peek_add(const char *spec);
 extern int sbk_autoplay, sbk_soak, sbk_nightmare, sbk_dumpon;
@@ -68,7 +69,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0 || strcmp(argv[i], "--saveevery") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--drawdistance") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0 || strcmp(argv[i], "--saveevery") == 0) {
             i++; /* option value */
         }
     }
@@ -204,6 +205,9 @@ int main(int argc, char **argv) {
             sbk_nightmare = 1;
         } else if (strcmp(argv[i], "--soak") == 0) {
             sbk_autoplay = sbk_soak = 1;
+        } else if (strcmp(argv[i], "--drawdistance") == 0 && i + 1 < argc) {
+            sbk_far_scale = (float)atof(argv[++i]);
+            if (sbk_far_scale < 0.25f) sbk_far_scale = 0.25f;
         } else if (strcmp(argv[i], "--perf") == 0) {
             sbk_perf_enabled = 1;
         } else if (strcmp(argv[i], "--racedbg") == 0) {

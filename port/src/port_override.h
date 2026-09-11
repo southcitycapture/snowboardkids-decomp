@@ -7,4 +7,6 @@
 /* IDO accepts `long long` constants and `-Xcpluscomm` comments in gnu89; GCC
  * with -std=gnu89 does too, so nothing to do there. */
 
+extern float sbk_far_scale; /* --drawdistance: multiplies the far plane and the cull range (patches.txt) */
+
 #endif

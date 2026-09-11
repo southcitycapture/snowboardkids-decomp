@@ -134,7 +134,7 @@ $(BUILD)/pin_table.o: $(PIN_TABLE) src/ultra/sbk_pins.h
 
 # The game's string literals use its own character encoding: upstream converts
 # them with tools/textconv.py before compiling, and so must we.
-$(GEN)/%.c: $(ROOT)/%.c tools/mirror_src.py $(PINS_TXT) $(ROOT)/tools/textconv.py $(ROOT)/tools/charmap.txt
+$(GEN)/%.c: $(ROOT)/%.c tools/mirror_src.py patches.txt $(PINS_TXT) $(ROOT)/tools/textconv.py $(ROOT)/tools/charmap.txt
 	@mkdir -p $(dir $@)
 	@$(PYTHON) $(ROOT)/tools/textconv.py $(ROOT)/tools/charmap.txt $< $@.tc
 	@$(PYTHON) tools/mirror_src.py --pins $(PINS_TXT) $@.tc $@
