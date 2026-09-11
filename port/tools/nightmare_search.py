@@ -33,10 +33,14 @@ def g4(*args, **kw):
 def trial(spec, frames=60000, timeout=300, extra=()):
     """One headless race. A trial that takes longer than `timeout` is hung
     (a healthy one costs 30-60 s wall at 12x): stop it and return no result,
-    so the sweep moves on instead of stalling for ten minutes."""
+    so the sweep moves on instead of stalling for ten minutes.
+
+    --nopak: with a Controller Pak plugged in the game writes to it during the
+    menus, so the first run after any pak change differs from the next ones and
+    the goldens rot. No pak at all is the only reproducible state."""
     g4("stop")
     t0 = time.time()
-    g4("run", "--play", SCRIPT, "--headless", "--nightmare",
+    g4("run", "--play", SCRIPT, "--headless", "--nightmare", "--nopak",
        "--trial", spec + ",quit=1", "--frames", str(frames), *extra)
     log = ""
     while time.time() - t0 < timeout:
@@ -65,6 +69,32 @@ def save(row):
         w.writerow({k: row.get(k, "") for k in FIELDS})
     print(row, flush=True)
     return row
+
+
+def update_row(spec, out):
+    """Overwrite the measurement of every CSV row with this spec.
+
+    The golden movies are checked against the CSV row they were recorded from,
+    so when a row is re-measured (a new build, or the --nopak change that made
+    trials reproducible again) the row has to move with it or regress fails on
+    a stale number rather than a real regression."""
+    if not os.path.exists(OUT) or not out.get("rank"):
+        return
+    with open(OUT) as f:
+        all_rows = list(csv.DictReader(f))
+    n = 0
+    for r in all_rows:
+        if r["spec"] == spec:
+            for k in ("rank", "finished_before", "frames", "money", "wall_s"):
+                if k in out:
+                    r[k] = out[k]
+            n += 1
+    with open(OUT, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w.writeheader()
+        w.writerows([{k: r.get(k, "") for k in FIELDS} for r in all_rows])
+    print("csv: %d row(s) for %s updated to rank=%s frames=%s"
+          % (n, spec, out.get("rank"), out.get("frames")), flush=True)
 
 
 def rows():
@@ -167,6 +197,7 @@ def record(course):
     if out.get("rank") != 1:
         print("course %s: record run did not win (%r), movie not kept" % (course, out), flush=True)
         return None
+    update_row(spec, out)
     os.makedirs(GOLDEN, exist_ok=True)
     local = os.path.join(GOLDEN, "course%s.m64" % course)
     g4("pull", remote, local)

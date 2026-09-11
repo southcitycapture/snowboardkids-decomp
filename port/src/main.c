@@ -102,6 +102,7 @@ int main(int argc, char **argv) {
     int fullscreen = 0; /* 1 = yes, -1 = --windowed, 0 = default (fullscreen when SBK_FULLSCREEN=1 or launched from the Finder) */
     extern int sbk_wide_output;
     const char *pak_path = NULL;
+    int nopak = 0;
     const char *play = NULL, *record = NULL;
     unsigned long max_frames = 0;
     unsigned last_dma = 0;
@@ -157,6 +158,8 @@ int main(int argc, char **argv) {
             sbk_bigtri_left = 400000;
         } else if (strcmp(argv[i], "--pak") == 0 && i + 1 < argc) {
             pak_path = argv[++i];
+        } else if (strcmp(argv[i], "--nopak") == 0) {
+            nopak = 1;      /* no Controller Pak at all: nothing is opened or written */
         } else if (strcmp(argv[i], "--peek") == 0 && i + 1 < argc) {
             sbk_peek_add(argv[++i]);
         } else if (strcmp(argv[i], "--cmds") == 0 && i + 1 < argc) {
@@ -196,7 +199,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -212,7 +215,11 @@ int main(int argc, char **argv) {
     if (fullscreen == 0 && getenv("SBK_FULLSCREEN") != NULL && getenv("SBK_FULLSCREEN")[0] == '1') fullscreen = 1;
     gfx_init(&gfx_sdl_gl13_wapi, &gfx_gl13_rapi, "Snowboard Kids", fullscreen > 0);
     sbk_input_init();
-    sbk_pak_open(pak_path);
+    if (!nopak) {
+        sbk_pak_open(pak_path);
+    } else {
+        printf("sbk: no Controller Pak (--nopak)\n");
+    }
     if (play != NULL && sbk_input_play_load(play) != 0) {
         return 1;
     }
