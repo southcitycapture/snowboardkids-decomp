@@ -34,7 +34,8 @@ end on the same frame hash (`--frames N --hashframe`).
 
     snowboardkids [--fullscreen] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64]
                   [--frames N] [--hashframe] [--mute] [--noaudio] [--wav OUT.wav]
-                  [--pak FILE.mpk] [--cmds FILE] [--trace] [--dumpdl N] [--dumpframes N]
+                  [--pak FILE.mpk] [--nopak] [--nopad]
+                  [--cmds FILE] [--trace] [--dumpdl N] [--dumpframes N]
                   [--dumptris] [--bigtri N] [--racedbg] [--peek ADDR:LEN] [--perf]
                   [--autoplay] [--soak] [--nightmare] [--trial SPEC]
                   [--status] [--coursetrace] [rom.z64]
@@ -99,30 +100,60 @@ A trial that has not printed a result after 300 s is hung (a healthy one costs
 ### Golden movies and `regress`
 
 `record N` replays the best winning row for course N once more with
-`--record /Users/zach/golden-courseN.m64` and copies the movie into
-`port/scripts/golden/courseN.m64`. Because the rider is the game's *own* CPU
-logic, the movie holds the menu walk, not the driving: the race is reproduced by
-replaying the movie under the same `--trial` spec, which is what `regress` does.
+`--record /Users/zach/golden-courseN.m64`, copies the movie into
+`port/scripts/golden/courseN.m64` and writes that run's measurement back into
+the CSV row it came from. Because the rider is the game's *own* CPU logic, the
+movie holds the menu walk, not the driving: the race is reproduced by replaying
+the movie under the same `--trial` spec, which is what `regress` does.
 
     port/tools/nightmare_search.py regress        # every recorded course
     port/tools/nightmare_search.py regress 0 2    # just these
 
 It prints a pass/fail table: a course passes when the replay finishes with the
-same rank *and* the same frame count as the CSV row it was measured from. The
-port is deterministic under scripted input, so any drift is a real regression.
+same rank *and* the same frame count as the CSV row it was measured from.
 
     course   spec                             expected       got            result
-    9        course=9,char=3,board=2,boost=64 rank=1/13124   rank=1/13124   PASS
-    0        course=0,char=1,board=2          rank=1/18066   rank=1/18066   PASS
-    1        course=1,char=3,board=2          rank=1/28002   rank=1/28002   PASS
-    2        course=2,char=1,board=2          rank=1/22436   rank=1/22436   PASS
-    3        course=3,char=1,board=2,boost=64 rank=1/23018   rank=1/23018   PASS
-    4        course=4,char=3,board=1,boost=96 rank=1/21138   rank=1/21138   PASS
-    5        course=5,char=3,board=1,boost=32 rank=1/22696   rank=1/22696   PASS
-    6        course=6,char=4,board=1,boost=64 rank=1/20868   rank=1/20868   PASS
+    9        course=9,char=3,board=2,boost=64 rank=1/13354   rank=1/13354   PASS
+    0        course=0,char=1,board=2          rank=1/18062   rank=1/18062   PASS
+    1        course=1,char=3,board=2,boost=32 rank=1/25058   rank=1/25058   PASS
+    2        course=2,char=1,board=2,boost=64 rank=1/20244   rank=1/20244   PASS
+    3        course=3,char=1,board=2,boost=64 rank=1/22976   rank=1/22976   PASS
+    4        course=4,char=3,board=1,boost=96 rank=1/21260   rank=1/21260   PASS
+    5        course=5,char=3,board=1,boost=64 rank=1/21514   rank=1/21514   PASS
+    6        course=6,char=4,board=1,boost=64 rank=1/21876   rank=1/21876   PASS
     8 course(s) checked, 0 failed
 
-### What the rider learned (2026-09-10)
+#### Goldens need `--nopak --nopad` (2026-09-11)
+
+A trial is only reproducible when nothing outside the script can reach the
+game, and two things did:
+
+* **The Controller Pak.** The game writes it while walking the menus, so the
+  first run after any pak change took a different path from the next ones. A
+  pak-backed run is deterministic only for as long as the pak's contents do not
+  change -- which a *saving* run cannot promise. `--nopak` reports no pak at
+  all (`osPfsInitPak` fails, the image is never opened or written).
+* **The gamepad.** An open pad reports a Rumble Pak through `osMotorInit`,
+  which changes the menus' pak prompts, and whether the Xbox One pad can be
+  claimed at startup depends on whether the previous process has finished
+  letting go of it. That is why replaying *one* movie gave two different races
+  in the same afternoon: 20244 frames when the pad was claimed, 21132 when the
+  fallback log said "no gamepad; keyboard only". `--nopad` skips gamepad init.
+
+Proof, on the G4: with both flags, three runs of
+`course=9,char=3,board=2,boost=64` print 5592 identical
+`sbk: retrace N: dma=M` fingerprint lines (one md5) and the same result line;
+three replays of the course 2 golden likewise. `regress` then passes 8/8 twice
+over. `nightmare_search.py` passes `--nopak --nopad` for every trial
+(run/sweep/record/regress); only `campaign` keeps a pak, its own experiment one.
+
+The CSV carries a `mode` column for this: `nopak` rows are the reproducible
+measurements the goldens are cut from, `pak` rows are the older numbers taken
+with a pak plugged in. `best_row` prefers `nopak` rows wherever a course has
+any. Under the new conditions courses 1, 2 and 5 needed a bigger boost than the
+pak-era book had (32, 64 and 64).
+
+### What the rider learned (re-measured 2026-09-11 with --nopak --nopad)
 
 Every course in the game has a setup the CPU rider wins with. `boost` is in
 1/256ths of the character+board top speed; where it is 0 the stock rider
@@ -130,14 +161,14 @@ already wins.
 
 | course | name | char | board | boost | frames |
 |---|---|---|---|---|---|
-| 9 | Rookie Mountain | 3 | 2 | 64 | 13124 |
-| 0 | Big Snowman | 1 | 2 | 0 | 18066 |
-| 1 | Sunset Rock | 3 | 2 | 0 | 28002 |
-| 2 | Night Highway | 1 | 2 | 0 | 22436 |
-| 3 | Grass Valley | 1 | 2 | 64 | 23018 |
-| 4 | Dizzy Land | 3 | 1 | 96 | 21138 |
-| 5 | Quicksand Valley | 3 | 1 | 32 | 22696 |
-| 6 | Silver Mountain | 4 | 1 | 64 | 20868 |
+| 9 | Rookie Mountain | 3 | 2 | 64 | 13354 |
+| 0 | Big Snowman | 1 | 2 | 0 | 18062 |
+| 1 | Sunset Rock | 3 | 2 | 32 | 25058 |
+| 2 | Night Highway | 1 | 2 | 64 | 20244 |
+| 3 | Grass Valley | 1 | 2 | 64 | 22976 |
+| 4 | Dizzy Land | 3 | 1 | 96 | 21260 |
+| 5 | Quicksand Valley | 3 | 1 | 64 | 21514 |
+| 6 | Silver Mountain | 4 | 1 | 64 | 21876 |
 
 The boost column is not a difficulty dial: because player 1 is a CPU rider it
 is rank-handicapped like the rest of the field (see docs/PLAN.md), so a bigger

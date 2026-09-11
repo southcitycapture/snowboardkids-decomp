@@ -76,8 +76,20 @@ void sbk_input_rumble(int on) {
     }
 }
 
+/* --nopad: no gamepad at all. Not a convenience -- a determinism switch. A
+ * pad that is open reports a Rumble Pak through osMotorInit and feeds its own
+ * stick and buttons into every frame, and whether the Xbox One pad can be
+ * claimed at startup depends on whether the previous process has finished
+ * letting go of it. That is what made headless trials drift run to run: two
+ * outcomes, one with the pad and one without. */
+int sbk_nopad;
+
 void sbk_input_init(void) {
     int i;
+    if (sbk_nopad) {
+        printf("sbk: no gamepad (--nopad)\n");
+        return;
+    }
     if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) != 0) {
         printf("sbk: no joystick subsystem: %s\n", SDL_GetError());
         return;

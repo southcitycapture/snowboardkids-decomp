@@ -220,15 +220,34 @@ include those files.
   reads as a stuck, stretched model because the panels are big, flat and
   untextured-looking.
 
-- `nightmare_search.py regress` is no longer a clean 8/8 and it is not the
-  renderer's fault. Measured 2026-09-11 on the unchanged binary as well as the
-  instrumented one: course 0 comes in at 18114 frames instead of the recorded
-  18066 on *every* run of both builds, so that golden row is simply stale; and
-  courses 2, 4 and 6 drift in and out (course 4 went FAIL, FAIL, PASS on the
-  same binary), so the replay is not as deterministic as the golden rows assume
-  once the trial is driven back to back on a loaded machine. Rerecord the rows
-  before trusting a FAIL, and do not read a single regress run as a renderer
-  regression.
+- **`regress` drifted because trials were not isolated. Settled 2026-09-11.**
+  Two things outside the script reached the game and moved a race:
+
+  1. *The Controller Pak.* The game writes it during the menu walk (the file's
+     mtime moves mid-run), so the first trial after any pak change took a
+     different path from the ones after it, and the golden rows -- recorded
+     against a pak that later changed -- went stale (course 0 at 18114 against
+     a recorded 18066).
+  2. *The gamepad.* An open pad makes `osMotorInit` report a Rumble Pak, which
+     changes the menus' pak prompts, and the Xbox One pad over IOKit is claimed
+     only if the previous process has finished letting go of it. So the *same*
+     movie replayed twice in a row landed on two different races: 20244 frames
+     with `sbk: Xbox One controller 045e:02ea via IOKit`, 21132 with
+     `sbk: no gamepad; keyboard only`. The fingerprints diverge at retrace 3503
+     on one extra DMA, deep in the menus, well before the race starts.
+
+  The fix is two switches, `--nopak` (os_pfs.c never opens or writes the image;
+  `osPfsInitPak` sees PFS_ERR_NOPACK) and `--nopad` (input_sdl.c skips gamepad
+  init entirely), passed by `nightmare_search.py` for every trial. With them,
+  three runs of one trial print identical `--hashframe` fingerprints and
+  `regress` passes 8/8 twice over. A pak-backed run (the campaign) is
+  deterministic only while the pak's contents do not change, which is exactly
+  what a saving session cannot promise -- so goldens are cut without one.
+
+  The re-measured book: 9 = 3/2/64, 0 = 1/2/0, 1 = 3/2/**32**, 2 = 1/2/**64**,
+  3 = 1/2/64, 4 = 3/1/96, 5 = 3/1/**64**, 6 = 4/1/64. Courses 1, 2 and 5 lost
+  at the pak-era boosts once the conditions were clean. The CSV keeps a `mode`
+  column (`pak` / `nopak`) and `best_row` prefers the reproducible rows.
 
 - Debug tooling added while chasing this: `--bigtri N` logs every on-screen
   triangle whose screen area exceeds N pixels together with the modelview

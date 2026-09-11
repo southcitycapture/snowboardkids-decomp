@@ -23,7 +23,10 @@ G4 = os.path.expanduser("~/Apps/isle-ppc-tools/g4/g4")
 SCRIPT = "/Users/zach/race-walk.txt"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nightmare_results.csv")
 FIELDS = ["spec", "course", "char", "board", "action", "item", "boost",
-          "rank", "finished_before", "frames", "money", "wall_s"]
+          "rank", "finished_before", "frames", "money", "wall_s", "mode"]
+# mode: "nopak" for a run measured with no Controller Pak (reproducible, what
+# the goldens are made from), "pak" for the older rows measured with one
+# plugged in, whose frame counts moved whenever the pak's contents did.
 
 
 def g4(*args, **kw):
@@ -35,12 +38,15 @@ def trial(spec, frames=60000, timeout=300, extra=()):
     (a healthy one costs 30-60 s wall at 12x): stop it and return no result,
     so the sweep moves on instead of stalling for ten minutes.
 
-    --nopak: with a Controller Pak plugged in the game writes to it during the
-    menus, so the first run after any pak change differs from the next ones and
-    the goldens rot. No pak at all is the only reproducible state."""
+    --nopak and --nopad are what make a trial reproducible. With a Controller
+    Pak plugged in the game writes to it during the menus, so the first run
+    after any pak change differs from the next ones; and an attached gamepad
+    both reports a Rumble Pak (changing the menu prompts) and is claimed only
+    when the previous process has let go of it, which is what made a replay of
+    the *same* movie land on two different races run to run."""
     g4("stop")
     t0 = time.time()
-    g4("run", "--play", SCRIPT, "--headless", "--nightmare", "--nopak",
+    g4("run", "--play", SCRIPT, "--headless", "--nightmare", "--nopak", "--nopad",
        "--trial", spec + ",quit=1", "--frames", str(frames), *extra)
     log = ""
     while time.time() - t0 < timeout:
@@ -51,7 +57,7 @@ def trial(spec, frames=60000, timeout=300, extra=()):
     else:
         print("hung trial (>%ds), stopping: %s" % (timeout, spec), flush=True)
         g4("stop")
-    row = {"spec": spec, "wall_s": round(time.time() - t0)}
+    row = {"spec": spec, "wall_s": round(time.time() - t0), "mode": "nopak"}
     for line in log.splitlines():
         if line.startswith("sbk-trial: result"):
             for kv in line.split()[2:]:
@@ -85,7 +91,7 @@ def update_row(spec, out):
     n = 0
     for r in all_rows:
         if r["spec"] == spec:
-            for k in ("rank", "finished_before", "frames", "money", "wall_s"):
+            for k in ("rank", "finished_before", "frames", "money", "wall_s", "mode"):
                 if k in out:
                     r[k] = out[k]
             n += 1
@@ -150,6 +156,11 @@ def best_row(course):
     cands = [r for r in rows() if r["course"] == str(course)]
     if not cands:
         return None
+    # A pak-era row cannot be trusted against a --nopak replay: prefer the
+    # reproducible measurements whenever the course has any.
+    fresh = [r for r in cands if r.get("mode") == "nopak"]
+    if fresh:
+        cands = fresh
     return min(cands, key=lambda r: (int(r["rank"]), int(r["frames"])))
 
 
@@ -194,10 +205,10 @@ def record(course):
     remote = "/Users/zach/golden-course%s.m64" % course
     out = trial(spec, extra=("--record", remote))
     out["spec"] = spec
+    update_row(spec, out)   # the fresh measurement is the truth, win or lose
     if out.get("rank") != 1:
         print("course %s: record run did not win (%r), movie not kept" % (course, out), flush=True)
         return None
-    update_row(spec, out)
     os.makedirs(GOLDEN, exist_ok=True)
     local = os.path.join(GOLDEN, "course%s.m64" % course)
     g4("pull", remote, local)
