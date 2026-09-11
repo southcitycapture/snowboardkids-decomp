@@ -214,6 +214,7 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--autonav") == 0) {
             extern int sbk_autonav;
             sbk_autonav = 1;    /* drive the menus by name: race, save, shop */
+            sbk_settings.launcher = 0;
         } else if (strcmp(argv[i], "--shop") == 0) {
             extern int sbk_autonav_shop;
             sbk_autonav_shop = 1;
@@ -234,6 +235,7 @@ int main(int argc, char **argv) {
             sbk_input_play_set_cmdfile(argv[++i]);
         } else if (strcmp(argv[i], "--autoplay") == 0) {
             sbk_autoplay = 1;
+            sbk_settings.launcher = 0;  /* unattended: never sit on a menu */
         } else if (strcmp(argv[i], "--trial") == 0 && i + 1 < argc) {
             sbk_trial_parse(argv[++i]);
         } else if (strcmp(argv[i], "--plan") == 0 && i + 1 < argc) {
@@ -256,6 +258,7 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--nightmare") == 0) {
             sbk_nightmare = 1;
         } else if (strcmp(argv[i], "--soak") == 0) {
+            sbk_settings.launcher = 0;
             sbk_autoplay = sbk_soak = 1;
         } else if (strcmp(argv[i], "--drawdistance") == 0 && i + 1 < argc) {
             sbk_far_scale = (float)atof(argv[++i]);

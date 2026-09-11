@@ -203,6 +203,51 @@ session, so headless render tests do not need the console runner.
    at that setting the campaign wins it. The book is worth re-measuring from a
    played save rather than a fresh one.
 
+8. **A front end** (2026-09-11). `port/src/settings.c` keeps
+   `settings.txt` next to the Controller Pak, `port/src/ui/` is an
+   immediate-mode GL 1.3 UI on one generated bitmap font, and between them
+   they add a launcher, an in-game options overlay, `n64` / `2x` resolution
+   modes and scanline / grille / smooth filters. See README "Launcher and
+   options" for the user-facing description; the design facts worth keeping:
+
+   * **The settings file must not reach a scripted run.** `--play`,
+     `--record`, `--headless` and `--nolauncher` set `sbk_settings_scripted`:
+     the file is never read, the defaults are used and no post-processing is
+     applied. Otherwise a golden replay recorded on one afternoon would
+     depend on whatever the launcher last wrote, which is exactly the class
+     of drift `--nopak --nopad` was introduced to remove. Explicit
+     `--mode=` / `--resolution=` / `--filter=` still win, so the filters can
+     be screenshotted over a scripted race; `nightmare_search.py` passes
+     none of them.
+   * **A 3x1 aperture-grille mask does not work on a Radeon 9000.** NPOT
+     textures are unsupported, so a 3x1 mask is an *incomplete* texture:
+     texturing switches off silently, the quad is drawn white and
+     `GL_DST_COLOR`/`GL_ZERO` multiplies the frame by 1. The first version
+     looked like it did nothing and the screenshot's pixels proved it. The
+     mask is now 4x1 (R, G, B, neutral), which is POT and still lands one
+     texel per output pixel.
+   * **Moire is a mapping question, not a tuning one.** Both masks are drawn
+     with `s = out_w / period` and `t = out_h / period` over the output
+     rectangle, so one texel always covers exactly one output pixel whatever
+     the window size; the period never has to divide the width.
+   * **gfx_pc did not need touching for the resolution modes.** It asks the
+     window layer for the framebuffer size, so `gfx_sdl_get_dimensions()`
+     answering 320x240 moves viewport, scissor and clear with it; the GL
+     backend copies that corner of the window into a POT texture at
+     `finish_render` and draws it into the output rectangle.
+   * **The UI saves and restores GL state with `glPushAttrib`/`glPopAttrib`
+     rather than invalidating gfx_pc's cache.** `GL_TEXTURE_BIT` covers all
+     six units, so the combiner chains come back exactly as the game left
+     them and the next frame's cached shader/texture state is still true.
+   * **Synthetic key events do not reach the fullscreen window over SSH.**
+     `osascript` reports success and nothing arrives, so the launcher and the
+     overlay are driven by `--uiscript SEQ` for testing and screenshots.
+   * **An unattended mode must not sit on a menu.** `--autoplay`, `--soak`
+     and `--autonav` turn the launcher off the way `--nolauncher` does.
+
+   Cost measured on the G4 during a race (`--perf`): `finish_render` 0.3-0.4
+   ms for the copy-and-filter pass, the frame still 60.0 Hz at 32% CPU.
+
 ## Build
 
     make ... (N64 build, once)        # map + linker script + assets

@@ -21,6 +21,7 @@ a fixed-function OpenGL 1.3 backend, scripted input.
 | Fullscreen: exclusive mode, 4:3 letterbox, Cmd+Return/Cmd+F/F11 toggle, on by default from the Finder | done |
 | Gamepad: SDL game controllers (HID pads) and Xbox One pads over USB via IOKit | done |
 | Rumble Pak: the pad's rumble (Xbox GIP packet or SDL haptic) behind osMotorInit/Start/Stop | done |
+| Front end: settings file, launcher, in-game options overlay, resolution modes, CRT filters | done, `settings.txt` next to the Controller Pak |
 
 Scripted input is deterministic: `--play` a text script or a Mupen `.m64`
 movie, `--record` one from a keyboard session, and two runs of the same script
@@ -32,7 +33,10 @@ end on the same frame hash (`--frames N --hashframe`).
     port/build-ppc.sh -j6         # Docker cross build -> port/build-ppc-darwin/snowboardkids
     port/tools/make_bundle.sh     # SnowboardKids.app with the ROM in Resources
 
-    snowboardkids [--fullscreen] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64]
+    snowboardkids [--fullscreen] [--nolauncher] [--mode=original|enhanced]
+                  [--resolution=native|n64|2x] [--filter=none|scanlines|grille|smooth]
+                  [--volume=0..100] [--uiscript SEQ]
+                  [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64]
                   [--frames N] [--hashframe] [--mute] [--noaudio] [--wav OUT.wav]
                   [--pak FILE.mpk] [--nopak] [--nopad]
                   [--cmds FILE] [--trace] [--dumpdl N] [--dumpframes N]
@@ -44,6 +48,82 @@ Scripts in `scripts/`: `title-start.txt`, `menu-walk.txt` (to mode select),
 `race-walk.txt` (through the pak prompts into a race), `race-drive.txt`
 (the same, then taps A with the stick forward), `pak-save.txt`. `--cmds FILE`
 appends script lines dropped into FILE at runtime, for driving menus step by step.
+
+## Launcher and options
+
+`~/Library/Application Support/SnowboardKids/settings.txt` (next to the
+Controller Pak) is a plain `key=value` file:
+
+    game=sbk1          mode=original|enhanced|custom
+    draw_distance=1..4 resolution=native|n64|2x
+    filter=none|scanlines|grille|smooth
+    widescreen=0|1     fullscreen=0|1     vsync=0|1
+    volume=0..100      launcher=0|1       perf=0|1
+
+It is read before the command line is parsed, so **every flag still wins for
+its own run**: `--drawdistance`, `--wide`, `--windowed`, `--perf` and the new
+`--mode=`, `--resolution=`, `--filter=`, `--volume=` all override the file
+without writing to it. The launcher and the overlay write it whenever
+something changes.
+
+**The launcher** runs on the created window before the game boots: a game
+list (Snowboard Kids, plus Snowboard Kids 2 greyed out as *not installed*
+until its ROM appears next to the first -- the table in `src/settings.c` is
+where a second game registers), **Mode** Original / Enhanced, an **Options**
+page with the individual settings, **Start** and **Quit**. Arrows or the
+stick move, Enter or A selects, left/right change a value, Esc or B backs out
+and quits from the top page.
+
+* **Original** = draw distance 1, `n64` resolution, no filter, 4:3.
+* **Enhanced** = draw distance 4, `native` resolution, `smooth`, 4:3.
+* Touching any single setting moves Mode to **CUSTOM** rather than lying.
+
+**The overlay** is the same Options page over the running game: **F1** or the
+pad's **View** button opens and closes it (View no longer doubles as Start).
+It is drawn over the left letterbox bar where one is wide enough and
+translucently over the frame otherwise; the game keeps running underneath
+with its controller reading as idle, and draw distance, resolution, filter,
+widescreen, vsync, volume and the perf readout all apply live.
+
+**Resolution modes** render the frame into a 320x240 (`n64`) or 640x480
+(`2x`) viewport, copy it into a power-of-two texture with
+`glCopyTexSubImage2D` (no FBO and no NPOT on a Radeon 9000) and draw it
+scaled into the 4:3 output rectangle -- `GL_NEAREST`, or `GL_LINEAR` under
+`smooth`. `native` is the path that was always there. gfx_pc is untouched:
+it asks the window layer for the framebuffer size and that answers with the
+render size.
+
+**Filters** are one quad over the output rectangle with the mask mapped
+exactly one texel per output pixel, so the period is always a whole number of
+pixels and moire is impossible at any window size. `scanlines` is a 1x2 alpha
+mask darkening every second line by 35%; `grille` is a 4x1 RGB mask
+multiplied in with `GL_DST_COLOR`/`GL_ZERO`. The grille period is 4 rather
+than the usual 3 because **a 3x1 texture is NPOT**: on this card that is an
+incomplete texture, texturing silently switches off and the quad multiplies
+the frame by white. The whole post pass costs 0.3-0.4 ms of `finish_render`
+on the G4 and the UI itself a fraction of that.
+
+`--nolauncher` skips the launcher, and so do `--autoplay`, `--soak` and
+`--autonav`: an unattended session must never sit on a menu. A **scripted**
+run (`--play`, `--record`, `--headless`, `--nolauncher`) goes further: the
+settings file is not read at all, the port's own defaults are used and no
+filter or resolution change is applied, so a golden replay is bit-identical
+whatever the last interactive session chose. Passing `--mode=`,
+`--resolution=` or `--filter=` explicitly overrides that ("no filters unless
+asked"); `nightmare_search.py` never passes them.
+
+`--uiscript SEQ` drives the launcher and the overlay from a token string
+(`u d l r` directions, `a` = A, `b` = B, `m` = the overlay button, `w` = wait
+a second), one token every eight ticks. It exists because synthetic key
+events from `osascript` do not reach a fullscreen SDL window over SSH, which
+is the only way the G4 is driven; every screenshot below was taken with it.
+
+The font is generated: `port/tools/gen_font.py` keeps 128 glyphs as hand-drawn
+5x7 pictures and writes `port/src/ui/ui_font.h`; the UI uploads it once as a
+128x128 `GL_ALPHA` texture and draws everything as immediate-mode quads
+(`port/src/ui/ui_gl.c`). `sbk_ui_begin()` pushes the whole GL state the game
+left behind and `sbk_ui_end()` pops it, so gfx_pc's own state cache stays
+valid and needs no invalidation.
 
 ## Letting it play itself
 
