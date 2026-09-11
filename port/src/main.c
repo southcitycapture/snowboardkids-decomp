@@ -30,7 +30,7 @@ extern int sbk_race_debug_enabled;
 int sbk_pak_open(const char *path);
 #include "debug/perf.h"
 int sbk_peek_add(const char *spec);
-extern int sbk_autoplay, sbk_soak, sbk_nightmare;
+extern int sbk_autoplay, sbk_soak, sbk_nightmare, sbk_dumpon;
 int sbk_trial_parse(const char *spec);
 int sbk_turbo, sbk_headless;
 static int quit_now;
@@ -176,6 +176,8 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--coursetrace") == 0) {
             extern int sbk_course_trace;
             sbk_course_trace = 1;
+        } else if (strcmp(argv[i], "--dumpon") == 0) {
+            sbk_dumpon = 1;
         } else if (strcmp(argv[i], "--nightmare") == 0) {
             sbk_nightmare = 1;
         } else if (strcmp(argv[i], "--soak") == 0) {

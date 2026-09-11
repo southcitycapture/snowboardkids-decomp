@@ -515,6 +515,7 @@ static void import_texture_ci8(int tile) {
 
 extern int sbk_tex_dump_left;
 int sbk_tri_dump_all; /* --dumptris: log every triangle of the dumped tasks */
+int sbk_tri_drawn;    /* triangles logged since the last arm (cap 6000) */
 
 static bool sbk_texture_addr_ok(const void *addr);
 
@@ -992,12 +993,26 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
                 rdp.textures_changed[i] = false;
             }
             bool linear_filter = (rdp.other_mode_h & (3U << G_MDSFT_TEXTFILT)) != G_TF_POINT;
-            if (linear_filter != rendering_state.textures[i]->linear_filter || rdp.texture_tile.cms != rendering_state.textures[i]->cms || rdp.texture_tile.cmt != rendering_state.textures[i]->cmt) {
+            /* N64 clamping applies at the tile's edge while the mask wraps the
+             * texture inside it: a 64x32 texture under a 128x256 tile repeats
+             * 2x8 times before clamping. GL has one wrap mode, so when the
+             * tile is larger than the masked texture, wrap (keep mirroring);
+             * clamp only when the tile does not exceed the texture. Without
+             * this, near-camera course polygons render as flat sheets of the
+             * edge texel with the texture only along one border. */
+            uint32_t cms_eff = rdp.texture_tile.cms, cmt_eff = rdp.texture_tile.cmt;
+            {
+                uint32_t tw = ((rdp.texture_tile.lrs - rdp.texture_tile.uls) >> 2) + 1;
+                uint32_t th = ((rdp.texture_tile.lrt - rdp.texture_tile.ult) >> 2) + 1;
+                if (rdp.texture_tile.masks != 0 && tw > (1u << rdp.texture_tile.masks)) cms_eff &= ~(uint32_t)G_TX_CLAMP;
+                if (rdp.texture_tile.maskt != 0 && th > (1u << rdp.texture_tile.maskt)) cmt_eff &= ~(uint32_t)G_TX_CLAMP;
+            }
+            if (linear_filter != rendering_state.textures[i]->linear_filter || cms_eff != rendering_state.textures[i]->cms || cmt_eff != rendering_state.textures[i]->cmt) {
                 gfx_flush();
-                gfx_rapi->set_sampler_parameters(i, linear_filter, rdp.texture_tile.cms, rdp.texture_tile.cmt);
+                gfx_rapi->set_sampler_parameters(i, linear_filter, cms_eff, cmt_eff);
                 rendering_state.textures[i]->linear_filter = linear_filter;
-                rendering_state.textures[i]->cms = rdp.texture_tile.cms;
-                rendering_state.textures[i]->cmt = rdp.texture_tile.cmt;
+                rendering_state.textures[i]->cms = (uint8_t)cms_eff;
+                rendering_state.textures[i]->cmt = (uint8_t)cmt_eff;
             }
         }
     }
@@ -1018,10 +1033,11 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
     bool z_is_from_0_to_1 = gfx_rapi->z_is_from_0_to_1();
 
     if (sbk_tex_dump_left > 0 || sbk_tri_dump_all) {
-        static int drawn;
-        if (drawn++ < 3000) {
-            printf("sbk-tri: cc=%08x tex=%ux%u tile=(%u,%u)-(%u,%u) fmt=%u siz=%u pal=%u om_l=%08x om_h=%08x",
-                   (unsigned)cc_id, tex_width, tex_height, rdp.texture_tile.uls >> 2, rdp.texture_tile.ult >> 2,
+        extern int sbk_tri_drawn;
+        int *drawnp = &sbk_tri_drawn;
+        if ((*drawnp)++ < 40000) {
+            printf("sbk-tri: cc=%08x tex=%ux%u@%p tile=(%u,%u)-(%u,%u) fmt=%u siz=%u pal=%u om_l=%08x om_h=%08x",
+                   (unsigned)cc_id, tex_width, tex_height, (const void *)rdp.loaded_texture[0].addr, rdp.texture_tile.uls >> 2, rdp.texture_tile.ult >> 2,
                    rdp.texture_tile.lrs >> 2, rdp.texture_tile.lrt >> 2, rdp.texture_tile.fmt, rdp.texture_tile.siz,
                    rdp.texture_tile.palette, (unsigned)rdp.other_mode_l, (unsigned)rdp.other_mode_h);
             for (int k = 0; k < 3; k++) {

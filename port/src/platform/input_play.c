@@ -29,7 +29,7 @@
 #include "input.h"
 
 struct cmd {
-    enum { C_WAIT, C_PRESS, C_HOLD, C_RELEASE, C_STICK } op;
+    enum { C_WAIT, C_PRESS, C_HOLD, C_RELEASE, C_STICK, C_DUMP } op;
     uint16_t buttons;
     int8_t x, y;
     int frames;
@@ -100,6 +100,8 @@ static int add_line(char *line) {
         c.op = C_RELEASE; c.buttons = parse_buttons(a1);
     } else if (strcasecmp(op, "stick") == 0 && n >= 3) {
         c.op = C_STICK; c.x = (int8_t)atoi(a1); c.y = (int8_t)atoi(a2); c.frames = n >= 4 ? atoi(a3) : -1;
+    } else if (strcasecmp(op, "dump") == 0) {
+        c.op = C_DUMP; c.frames = n >= 2 ? atoi(a1) : 4; /* dump N presented frames (+ the next task's list) */
     } else {
         fprintf(stderr, "sbk: input script: bad line: %s", line);
         return 0;
@@ -239,6 +241,14 @@ void sbk_input_play_step(uint16_t *buttons, int8_t *x, int8_t *y) {
                 case C_HOLD: held |= c->buttons; break;
                 case C_RELEASE: held &= (uint16_t)~c->buttons; break;
                 case C_STICK: stick_x = c->x; stick_y = c->y; stick_left = c->frames; break;
+                case C_DUMP: {
+                    extern int sbk_frame_dump_left, sbk_dump_task, sbk_dump_frames;
+                    extern unsigned sbk_task_count;
+                    sbk_dump_frames = c->frames;
+                    sbk_dump_task = (int)sbk_task_count + 1; /* the dumper arms on this task */
+                    printf("sbk-play: read %u: dump %d frames from task %d\n", reads, c->frames, sbk_dump_task);
+                    break;
+                }
             }
         }
         if (script_left > 0) {

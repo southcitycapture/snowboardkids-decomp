@@ -18,6 +18,32 @@ int sbk_race_debug_enabled;
 int sbk_autoplay; /* --autoplay: player 1 is driven by the game's own CPU rider logic */
 int sbk_soak;     /* --soak: outside a race, keep confirming through the menus (implies --autoplay) */
 int sbk_nightmare;
+int sbk_dumpon;      /* --dumpon: dump 30 frames (with triangles) the first time player 1 takes an item hit or spins out */
+
+static void dumpon_tick(void) {
+    static int last_mode = -1, fired;
+    RacePlayer *p = &gRacePlayers[0];
+    extern int sbk_dump_task, sbk_dump_frames, sbk_dump_tris;
+    extern unsigned sbk_task_count;
+    if (!sbk_dumpon || !p->isActive || gRaceDemoPlaybackEnabled) return;
+    if (p->mode != last_mode) {
+        printf("sbk-dumpon: mode %d -> %d hit=%04x st=%08x\n", last_mode, p->mode, (unsigned)p->pendingItemHitFlags, (unsigned)p->stateFlags);
+        last_mode = p->mode;
+    }
+    {
+        extern int sbk_frame_dump_left;
+        static unsigned last_arm;
+        if (fired < 6 && sbk_frame_dump_left == 0 && sbk_task_count > last_arm + 240 &&
+            (p->pendingItemHitFlags != 0 || p->mode == 4 || p->mode == 5 || p->mode == 29)) {
+            fired++;
+            last_arm = sbk_task_count;
+            sbk_dump_frames = 24;
+            sbk_dump_tris = 1;
+            sbk_dump_task = (int)sbk_task_count + 1;
+        printf("sbk-dumpon: armed at task %d (hit=%04x mode=%d)\n", sbk_dump_task, (unsigned)p->pendingItemHitFlags, p->mode);
+        }
+    }
+}
 
 /* --trial char=N,board=N,action=N,item=N,boost=N,quit=1 (comma or space separated): a race experiment.
  * Outside a race the rider selection is pinned to char/board so the race
@@ -283,6 +309,7 @@ void sbk_autoplay_tick(unsigned long retraces) {
     status_tick(retraces);
     course_trace(retraces);
     trial_tick(retraces);
+    dumpon_tick();
     if (gRacePlayers[0].isActive) {
         if (sbk_nightmare) {
             int i;

@@ -49,13 +49,14 @@ void sbk_gfx_task(OSTask *task) {
     count++;
     extern int sbk_tri_dump_all;
     extern int sbk_dump_tris;
-    sbk_tri_dump_all = sbk_dump_tris && sbk_dump_task > 0 && count >= sbk_dump_task && count < sbk_dump_task + 4;
+    { extern int sbk_frame_dump_left; sbk_tri_dump_all = sbk_dump_tris && ((sbk_dump_task > 0 && count >= sbk_dump_task && count < sbk_dump_task + 4) || sbk_frame_dump_left > 0); }
     if (count == sbk_dump_task) {
         extern int sbk_tex_dump_left;
         extern void gfx_debug_flush_texture_cache(void);
         extern int sbk_frame_dump_left;
         gfx_debug_flush_texture_cache();
-        sbk_tex_dump_left = sbk_dump_frames > 3 ? 0 : 120;
+        { extern int sbk_tri_drawn; sbk_tri_drawn = 0; }
+        sbk_tex_dump_left = 120;
         sbk_frame_dump_left = sbk_dump_frames;
     }
     if ((sbk_trace && count <= 6) || (sbk_dump_task && count >= sbk_dump_task && count < sbk_dump_task + 4)) {
