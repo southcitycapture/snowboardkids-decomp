@@ -6,7 +6,21 @@ are untouched; everything lives in this `port/` directory: a libultra
 replacement, an interpreter for the display lists and the audio command lists,
 a fixed-function OpenGL 1.3 backend, scripted input.
 
-## Status (10 September 2026)
+<p align="center">
+  <img src="docs/screenshots/launcher.png" width="49%" alt="Launcher">
+  <img src="docs/screenshots/options.png" width="49%" alt="Options">
+  <img src="docs/screenshots/race-native.png" width="49%" alt="Race at native resolution, 4x draw distance">
+  <img src="docs/screenshots/race-n64-scanlines.png" width="49%" alt="Race at 320x240 with scanlines">
+  <img src="docs/screenshots/race-2x-grille.png" width="49%" alt="Race at 2x with the grille mask">
+  <img src="docs/screenshots/ending-credits.png" width="49%" alt="Ending credits, reached by the self-play campaign">
+</p>
+
+All captured on the G4 itself (Leopard, Radeon 9000): launcher and options,
+a race in Enhanced mode, the same game at the N64's 320x240 with scanlines,
+2x with the aperture grille, and the ending credits the self-play campaign
+reached.
+
+## Status (11 September 2026)
 
 | Milestone | State |
 | --- | --- |
@@ -50,6 +64,8 @@ Scripts in `scripts/`: `title-start.txt`, `menu-walk.txt` (to mode select),
 appends script lines dropped into FILE at runtime, for driving menus step by step.
 
 ## Launcher and options
+
+<img src="docs/screenshots/overlay-scanlines.png" width="60%" alt="The in-game overlay, N64 resolution and scanlines applied live">
 
 `~/Library/Application Support/SnowboardKids/settings.txt` (next to the
 Controller Pak) is a plain `key=value` file:
