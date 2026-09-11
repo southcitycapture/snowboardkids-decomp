@@ -13,6 +13,8 @@ const struct SbkColor SBK_UI_SHADOW = { 0.00f, 0.00f, 0.00f, 0.70f };
 const struct SbkColor SBK_UI_LINE   = { 0.20f, 0.28f, 0.42f, 1.0f };
 
 static GLuint font_tex;
+static GLuint logo_tex;
+#include "ui_logo.h"
 static int in_ui;
 
 static void font_upload(void) {
@@ -38,6 +40,32 @@ static void font_upload(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
+/* The launcher logo: uploaded once into a 512x512 texture (the 288-row image
+ * in the top rows, the rest untouched), drawn with linear filtering. */
+void sbk_ui_logo(int x, int y, int w, int h) {
+    float v1 = (float)SBK_UI_LOGO_H / 512.0f;
+    if (logo_tex == 0) {
+        glGenTextures(1, &logo_tex);
+        glBindTexture(GL_TEXTURE_2D, logo_tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, SBK_UI_LOGO_W, SBK_UI_LOGO_H, GL_RGBA, GL_UNSIGNED_BYTE, sbk_ui_logo_rgba);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, logo_tex);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f); glVertex2i(x, y);
+    glTexCoord2f(1.0f, 0.0f); glVertex2i(x + w, y);
+    glTexCoord2f(1.0f, v1);   glVertex2i(x + w, y + h);
+    glTexCoord2f(0.0f, v1);   glVertex2i(x, y + h);
+    glEnd();
 }
 
 int sbk_ui_pick_scale(int win_h) {

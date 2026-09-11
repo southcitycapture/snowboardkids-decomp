@@ -328,11 +328,12 @@ static void draw_launcher(int win_w, int win_h) {
     sbk_ui_rect(0, 0, win_w, win_h, bg);
     sbk_ui_rect(0, 0, win_w, win_h / 3, bar);
     {
-        const char *title = "SNOWBOARD KIDS";
-        const char *sub = "Power Mac G4 port";
-        int tw = sbk_ui_text_w(title, scale * 2);
-        sbk_ui_text_shadow((win_w - tw) / 2, py - sbk_ui_text_h(scale * 2) - scale * 18, scale * 2, title, SBK_UI_FG);
-        sbk_ui_text((win_w - sbk_ui_text_w(sub, scale)) / 2, py - sbk_ui_text_h(scale) - scale * 6, scale, sub, SBK_UI_DIM);
+        /* the "Snowboard Kids 1+2 PowerPC Edition" logo, sized to the window */
+        int lw = win_w * 3 / 5, lh;
+        if (lw > 720) lw = 720;
+        lh = lw * 288 / 512;
+        if (lh > py - scale * 8) { lh = py - scale * 8; lw = lh * 512 / 288; }
+        sbk_ui_logo((win_w - lw) / 2, py - lh - scale * 4, lw, lh);
     }
     draw_panel(page == 0 ? "PLAY" : "OPTIONS", items, count, nav.cursor, px, py, pw, ph, scale, hint);
     sbk_ui_end();

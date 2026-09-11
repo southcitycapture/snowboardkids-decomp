@@ -23,6 +23,7 @@ void sbk_ui_border(int x, int y, int w, int h, int t, struct SbkColor c);
 void sbk_ui_text(int x, int y, int scale, const char *s, struct SbkColor c);
 /* Same, with a one-pixel*scale drop shadow: readable over any frame. */
 void sbk_ui_text_shadow(int x, int y, int scale, const char *s, struct SbkColor c);
+void sbk_ui_logo(int x, int y, int w, int h); /* the launcher logo, aspect 16:9 */
 int sbk_ui_text_w(const char *s, int scale);
 int sbk_ui_text_h(int scale);
 
