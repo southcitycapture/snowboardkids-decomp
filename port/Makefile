@@ -54,7 +54,7 @@ ABS_LD := $(filter-out %/hardware_regs.ld,$(ABS_LD))
 # libultra globals the port defines itself (os_misc.c) must not become absolutes.
 PORT_DEFINED := osTvType osRomBase osResetType osAppNMIBuffer osMemSize
 # The port's own platform layer.
-PORT_C     := $(wildcard src/*.c src/ultra/*.c src/gfx/*.c src/audio/*.c src/platform/*.c src/debug/*.c)
+PORT_C     := $(wildcard src/*.c src/ultra/*.c src/gfx/*.c src/audio/*.c src/platform/*.c src/debug/*.c src/ui/*.c)
 PORT_ASM   := $(CTX_ASM)
 
 GAME_OBJS  := $(patsubst %.c,$(BUILD)/game/%.o,$(GAME_C) $(ULTRA_C))
