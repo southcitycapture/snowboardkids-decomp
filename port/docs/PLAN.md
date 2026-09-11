@@ -190,6 +190,13 @@ session, so headless render tests do not need the console runner.
    course still for sale counts. Progression level 1 (wins on 0-4 and 9) was
    reached without buying anything. `--shop` is off by default.
 
+   Result of the first `--autonav` session: **the campaign finished the game.**
+   Courses 9, 0, 1, 2, 3, 4, 5 and 6 all won first place on the book's setups,
+   a save after every race, the ending credits rolling on the G4
+   (`g4-shots/ending-credits.png`), and a final save of 56,820G at progression
+   level 3 that reloads on the next start. It took several restarts (a new
+   binary each time) and every one resumed from the pak.
+
    Still open: a trial win does not always transfer. Sunset Rock (course 1) was
    won by char=3 board=2 at boost 0 from a fresh save but came 3rd repeatedly
    in the campaign; re-measured under `--nopak --nopad` it needs boost 32, and
