@@ -27,6 +27,7 @@
 #include "game/menu/course_select/course_select_menu.h"
 #include "game/menu/character_select/character_select_menu.h"
 #include "game/menu/main_menu/controller_main_menu_flow.h"
+#include "game/menu/controller_pak/controller_pak_menu.h"
 #include "../platform/input.h"
 
 extern GameTask gActiveGameTaskList;
@@ -116,6 +117,7 @@ int sbk_autonav_every = 1;  /* save after every N races */
 enum { NAV_RACE = 0, NAV_SAVE = 1, NAV_SHOP = 2 };
 static int nav_want = NAV_RACE;
 static int nav_races, nav_saves;
+static int nav_save_flow_seen;  /* the pak save flow has run since SAVE was asked for */
 static unsigned long nav_last_action;
 
 extern u8 gRaceSplitscreenMode;
@@ -151,13 +153,20 @@ static void nav_watch(void) {
     int results = sbk_menu_on("updateRaceResultsFlow") || sbk_menu_on("prepareRaceResultsFlow");
     if (results && !in_results) {
         nav_races++;
-        if (nav_races % sbk_autonav_every == 0) nav_want = NAV_SAVE;
+        if (nav_races % sbk_autonav_every == 0) {
+            nav_want = NAV_SAVE;
+            nav_save_flow_seen = 0;
+        }
         printf("sbk-nav: race %d finished, want=%s\n", nav_races, nav_want == NAV_SAVE ? "SAVE" : "RACE");
         fflush(stdout);
     }
     in_results = results;
-    if (nav_want == NAV_SAVE && (int)gGameSaveDataBuffer[0].money == gRacePlayers[0].money &&
-        gRacePlayers[0].money != 0) {
+    if (sbk_menu_on("updateControllerPakRaceRecordSaveFlow")) nav_save_flow_seen = 1;
+    /* Not just savemoney == money: the purse is credited a little after the
+     * results screen comes up, so the two match for a moment before the race's
+     * winnings land and the save would look done before it had run. */
+    if (nav_want == NAV_SAVE && nav_save_flow_seen &&
+        (int)gGameSaveDataBuffer[0].money == gRacePlayers[0].money && gRacePlayers[0].money != 0) {
         nav_saves++;
         nav_buy = nav_pick_course();
         nav_want = nav_buy >= 0 ? NAV_SHOP : NAV_RACE;
@@ -201,8 +210,32 @@ static void nav_act(unsigned long retraces) {
         }
         return;
     }
+    /* The save menu asks USE THIS SAVE / START A NEW GAME (gMenuChoicePromptState
+     * 3 and 4, race_setup_menu.c). A plain A took the new game every time, which
+     * is why a restarted campaign always began at 0G even with a saved pak:
+     * park the choice on USE (3) whenever the prompt is up. */
+    if (sbk_menu_on("updateRaceSetupSaveMenu")) {
+        if (gMenuChoicePromptState[0] == 4) gMenuChoicePromptState[0] = 3;
+        nav_press("press A 3");
+        return;
+    }
     if (sbk_menu_on("updateRaceSplitscreenSelectMenu")) {
         gRaceSplitscreenMode = (u8)(nav_want == NAV_SAVE ? 4 : nav_want == NAV_SHOP ? 3 : 0);
+        nav_press("press A 3");
+        return;
+    }
+    /* The save flow's two choices. Both default to the answer that backs out,
+     * and a queued A lands on the prompt the frame it appears, so stick-up
+     * arrives too late: park the choice instead.
+     *   ARE YOU SURE? -> gControllerPakMenuState.confirmChoice 0 = YES
+     *   DATA SAVE     -> gMenuChoicePromptState[0] 3 = SAVE (4 backs out) */
+    if (sbk_menu_on("updateControllerPakRaceRecordSaveOverwritePrompt")) {
+        gControllerPakMenuState.confirmChoice = 0;
+        nav_press("press A 3");
+        return;
+    }
+    if (sbk_menu_on("updateControllerPakRaceRecordSaveFlow")) {
+        if (gMenuChoicePromptState[0] == 4) gMenuChoicePromptState[0] = 3;
         nav_press("press A 3");
         return;
     }
