@@ -191,13 +191,46 @@ static void nav_press(const char *line) {
 }
 
 static void nav_act(unsigned long retraces) {
+    static char last_top[128];
+    static unsigned long top_since;
     const char *top = sbk_menu_top();
+    if (strcmp(top, last_top) != 0) {
+        snprintf(last_top, sizeof(last_top), "%s", top);
+        top_since = retraces;
+    }
     if (retraces - nav_last_action < 60) return;
     nav_last_action = retraces;
-    /* In the shop: park the cursors on the course being bought and press A. */
-    if (sbk_menu_on("updateCourseSelectMenu")) {
-        gCourseSelectModeSelection = (u8)(nav_buy >= 0 ? 1 : 2); /* 1 = buy a course, 2 = leave */
+    /* Watchdog: a screen that has not moved in 40 s of game time is one the
+     * navigator does not understand. Back out with B and, if a purchase was
+     * under way, give it up -- an unattended session must not sit on a menu
+     * for an hour, which is how the board shop swallowed the first run. */
+    if (retraces - top_since > 2400) {
+        printf("sbk-nav: stuck on %s for %lu retraces, backing out\n", top, retraces - top_since);
+        fflush(stdout);
+        top_since = retraces;
+        if (nav_buy >= 0) {
+            nav_buy = -1;
+            nav_want = NAV_RACE;
+        }
+        nav_press("press B 3");
+        return;
+    }
+    /* In the shop. Its front page is a three-row menu in
+     * gCourseSelectModeSelection: 0 the course shop, 1 the board shop
+     * (FREE STYLE / ALL AROUND / ALPINE, which is where an unaimed run ended
+     * up and sat), 2 RETURN. */
+    if (sbk_menu_on("updateCourseSelectModeMenu")) {
+        gCourseSelectModeSelection = (u8)(nav_buy >= 0 ? 0 : 2);
         nav_press("press A 3");
+        return;
+    }
+    if (sbk_menu_on("updateCourseSelectPurchasePrompt")) {
+        /* callbackData1: 0 = buy, 1 = cancel; 2 and up is the purchase
+         * animation, which answers nothing -- pressing A into it only stalls. */
+        if (gCurrentGameTask != NULL && gCurrentGameTask->callbackData1 < 2) {
+            gCurrentGameTask->callbackData1 = 0;
+            nav_press("press A 3");
+        }
         return;
     }
     if (sbk_menu_on("updateCourseSelectUnlockCourseList") || sbk_menu_on("updateCourseSelectCourseList")) {
