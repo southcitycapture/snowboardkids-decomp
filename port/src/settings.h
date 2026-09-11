@@ -38,6 +38,10 @@ struct SbkSettings {
 
 extern struct SbkSettings sbk_settings;
 extern int sbk_settings_scripted;   /* 1 = no file, no launcher, no filters */
+/* Set when --mode= / --resolution= / --filter= was given: those are honoured
+ * even in a scripted run ("apply no filters unless asked"). Goldens never
+ * pass them, so replays stay bit-identical. */
+extern int sbk_settings_forced;
 extern int sbk_settings_loaded;
 
 const char *sbk_settings_dir(void);

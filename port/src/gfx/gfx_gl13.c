@@ -493,6 +493,146 @@ void gfx_gl13_set_render_scale(int mode) {
 
 void gfx_gl13_set_filter(int filter) { filter_mode = filter; }
 
+/* ---- the present-time post pass ----------------------------------------
+ * The N64 frame is drawn into the bottom-left render_w x render_h of the
+ * window (the whole output rectangle in `native`), copied into a
+ * power-of-two texture with glCopyTexSubImage2D -- the Radeon 9000 has no
+ * FBO and no NPOT textures -- and drawn scaled into the output rectangle.
+ * The filters are one more quad each on top of that, with the mask texture
+ * mapped exactly one texel per output pixel so no moire is possible. */
+
+static GLuint copy_tex, scan_tex, grille_tex;
+static int copy_tw, copy_th;
+
+static int pot(int v) { int p = 1; while (p < v) p <<= 1; return p; }
+
+static void ensure_copy_tex(int w, int h) {
+    int tw = pot(w), th = pot(h);
+    if (copy_tex != 0 && tw == copy_tw && th == copy_th) return;
+    if (copy_tex != 0) glDeleteTextures(1, &copy_tex);
+    glGenTextures(1, &copy_tex);
+    glBindTexture(GL_TEXTURE_2D, copy_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tw, th, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    copy_tw = tw; copy_th = th;
+}
+
+static void ensure_masks(void) {
+    /* scanlines: one line clear, the next 35% dark (tuned on 1680x1050 shots) */
+    static const unsigned char scan[2] = { 0, 90 };
+    /* Aperture grille: an R/G/B triad plus a neutral column, 4 output pixels
+     * wide. The period is 4 and not the usual 3 because the Radeon 9000 has
+     * no NPOT textures -- a 3x1 mask is an incomplete texture, texturing
+     * silently switches off and the mask multiplies the frame by white. */
+    static const unsigned char grille[12] = { 255, 216, 216,  216, 255, 216,
+                                              216, 216, 255,  236, 236, 236 };
+    if (scan_tex == 0) {
+        glGenTextures(1, &scan_tex);
+        glBindTexture(GL_TEXTURE_2D, scan_tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, 1, 2, 0, GL_ALPHA, GL_UNSIGNED_BYTE, scan);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    }
+    if (grille_tex == 0) {
+        glGenTextures(1, &grille_tex);
+        glBindTexture(GL_TEXTURE_2D, grille_tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 4, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, grille);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    }
+}
+
+static void post_begin(void) {
+    int u;
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    for (u = 5; u >= 0; u--) {
+        glActiveTexture(GL_TEXTURE0 + (GLenum)u);
+        glDisable(GL_TEXTURE_2D);
+    }
+    glActiveTexture(GL_TEXTURE0);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_FOG);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_LIGHTING);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glViewport(0, 0, out_win_w, out_win_h);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, (GLdouble)out_win_w, (GLdouble)out_win_h, 0.0, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+}
+
+static void post_end(void) {
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopAttrib();
+}
+
+/* (x,y) top-left in window pixels, texture coordinates already in texels. */
+static void post_quad(GLuint tex, int x, int y, int w, int h,
+                      float s0, float t0, float s1, float t1) {
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBegin(GL_QUADS);
+    glTexCoord2f(s0, t1); glVertex2i(x, y);
+    glTexCoord2f(s1, t1); glVertex2i(x + w, y);
+    glTexCoord2f(s1, t0); glVertex2i(x + w, y + h);
+    glTexCoord2f(s0, t0); glVertex2i(x, y + h);
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+}
+
+static void post_present(void) {
+    if (out_w <= 0) return;
+    post_begin();
+    if (render_w > 0) {
+        int linear = filter_mode == 3;
+        ensure_copy_tex(render_w, render_h);
+        glBindTexture(GL_TEXTURE_2D, copy_tex);
+        glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, render_w, render_h);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        post_quad(copy_tex, out_x, out_y, out_w, out_h,
+                  0.0f, 0.0f, (float)render_w / (float)copy_tw, (float)render_h / (float)copy_th);
+    }
+    if (filter_mode == 1 || filter_mode == 2) {
+        ensure_masks();
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, filter_mode == 1 ? GL_MODULATE : GL_REPLACE);
+        if (filter_mode == 1) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0.0f, 0.0f, 0.0f, 1.0f);
+            /* one texel per output pixel: the line period is exactly 2 px */
+            post_quad(scan_tex, out_x, out_y, out_w, out_h, 0.5f, 0.0f, 0.5f, (float)out_h / 2.0f);
+        } else {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_DST_COLOR, GL_ZERO);   /* frame *= mask */
+            post_quad(grille_tex, out_x, out_y, out_w, out_h, 0.0f, 0.5f, (float)out_w / 4.0f, 0.5f);
+        }
+    }
+    post_end();
+}
+
 static void gl13_set_viewport(int x, int y, int width, int height) {
     if (render_w > 0) { glViewport(x, y, width, height); return; }
     glViewport(x + out_x, y + out_y, width, height);
@@ -672,6 +812,7 @@ static void hash_frame(void) {
 }
 
 static void gl13_finish_render(void) {
+    post_present();
     /* The options overlay goes on last, over the finished frame. */
     sbk_ui_overlay_draw(out_win_w, out_win_h, out_x, out_y, out_w, out_h);
     if (sbk_hash_frames) {
@@ -704,7 +845,9 @@ static void gl13_finish_render(void) {
 
 static void gl13_clear(bool color, float r, float g, float b, bool depth) {
     GLbitfield mask = 0;
-    if (out_w > 0) {
+    if (render_w > 0) {
+        glScissor(0, 0, render_w, render_h);
+    } else if (out_w > 0) {
         glScissor(out_x, out_y, out_w, out_h); /* the frame, not the letterbox bars */
     } else {
         glDisable(GL_SCISSOR_TEST);

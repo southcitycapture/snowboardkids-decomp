@@ -97,6 +97,43 @@ static int item_selectable(const struct UiItem *it) {
     return 1;
 }
 
+/* --- scripted UI input (--uiscript) --------------------------------------
+ * The G4 is driven over SSH and synthetic key events do not reach a
+ * fullscreen SDL window, so the launcher and the overlay are exercised (and
+ * screenshotted) from a token string instead: u d l r = directions, a = A,
+ * b = B, m = the overlay button, w = wait a second, . = wait a tick. One
+ * token per SBK_UISCRIPT_TICKS ticks, pressed on the first of them. */
+#define SBK_UISCRIPT_TICKS 8
+
+static const char *ui_script;
+static int ui_script_pos, ui_script_tick, ui_script_wait;
+
+void sbk_ui_script_set(const char *seq) {
+    ui_script = seq;
+    ui_script_pos = 0;
+    ui_script_tick = 0;
+    printf("sbk: ui script \"%s\"\n", seq);
+}
+
+static void ui_script_apply(struct SbkUiRaw *r) {
+    char c;
+    if (ui_script == NULL || ui_script[ui_script_pos] == '\0') return;
+    if (ui_script_wait > 0) { ui_script_wait--; return; }
+    if (ui_script_tick++ % SBK_UISCRIPT_TICKS != 0) return;
+    c = ui_script[ui_script_pos++];
+    switch (c) {
+        case 'u': r->up = 1; break;
+        case 'd': r->down = 1; break;
+        case 'l': r->left = 1; break;
+        case 'r': r->right = 1; break;
+        case 'a': r->accept = 1; break;
+        case 'b': r->cancel = 1; break;
+        case 'm': r->menu = 1; break;
+        case 'w': ui_script_wait = 60; break;
+        default: break;
+    }
+}
+
 /* --- navigation ---------------------------------------------------------- */
 
 struct Nav {
@@ -196,11 +233,13 @@ static int draw_list(struct UiItem *items, int count, int cursor, int x, int y, 
         value_text(it, val, sizeof(val));
         if (val[0] != '\0') {
             int vw = sbk_ui_text_w(val, scale);
-            int vx = x + w - vw;
+            /* the < > arrows live inside the panel: always reserve their
+               column so the value does not jump when a row is selected */
+            int vx = x + w - vw - sbk_ui_text_w("  ", scale);
             struct SbkColor vc = selected ? SBK_UI_SEL : (item_selectable(it) ? SBK_UI_ACCENT : SBK_UI_DIM);
             if (selected && it->type != IT_GAME && it->type != IT_ACTION) {
                 sbk_ui_text(vx - sbk_ui_text_w("  ", scale), cy + scale, scale, "\1", SBK_UI_FG);
-                sbk_ui_text(x + w + sbk_ui_text_w(" ", scale), cy + scale, scale, "\2", SBK_UI_FG);
+                sbk_ui_text(x + w - sbk_ui_text_w(" ", scale), cy + scale, scale, "\2", SBK_UI_FG);
             }
             sbk_ui_text(vx, cy + scale, scale, val, vc);
         }
@@ -242,7 +281,7 @@ static int list_width(struct UiItem *items, int count, int scale) {
         int row;
         if (items[i].type == IT_GAME) lw += sbk_ui_text_w("  ", scale);
         value_text(&items[i], val, sizeof(val));
-        row = lw + (val[0] != '\0' ? sbk_ui_text_w(val, scale) + sbk_ui_text_w("    ", scale) : 0);
+        row = lw + (val[0] != '\0' ? sbk_ui_text_w(val, scale) + sbk_ui_text_w("      ", scale) : 0);
         if (row > w) w = row;
     }
     /* the selected row hangs a "<" left of the value and a ">" past the edge */
@@ -316,6 +355,7 @@ int sbk_launcher_run(void) {
         gfx_handle_events();
         if (sbk_input_quit_requested()) { quit = 1; break; }
         sbk_ui_input_raw(&r);
+        ui_script_apply(&r);
         items = page == 0 ? main_items : options_items;
         count = page == 0 ? main_n : OPTIONS_N;
         clamp_cursor(&nav, items, count);
@@ -378,6 +418,7 @@ int sbk_ui_overlay_tick(void) {
     struct SbkUiRaw r;
     if (sbk_settings_scripted) return 0;
     sbk_ui_input_raw(&r);
+    ui_script_apply(&r);
     if (r.menu && menu_hold == 0) {
         overlay_open = !overlay_open;
         if (overlay_open) {

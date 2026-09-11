@@ -7,6 +7,7 @@
 
 struct SbkSettings sbk_settings;
 int sbk_settings_scripted;
+int sbk_settings_forced;
 int sbk_settings_loaded;
 
 /* --- the game list ------------------------------------------------------ */
@@ -205,7 +206,7 @@ void sbk_settings_apply(void) {
     if (sbk_far_scale < 0.25f) sbk_far_scale = 0.25f;
     sbk_perf_enabled = sbk_settings.perf;
     sbk_audio_out_set_volume(sbk_settings.volume);
-    if (sbk_settings_scripted) {
+    if (sbk_settings_scripted && !sbk_settings_forced) {
         /* No post-processing at all under a script: a golden replay must see
          * exactly the pixels it was recorded against. */
         gfx_gl13_set_render_scale(SBK_RES_NATIVE);

@@ -71,7 +71,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--drawdistance") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0 || strcmp(argv[i], "--saveevery") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--drawdistance") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0 || strcmp(argv[i], "--saveevery") == 0 || strcmp(argv[i], "--uiscript") == 0) {
             i++; /* option value */
         }
     }
@@ -161,6 +161,8 @@ int main(int argc, char **argv) {
             sbk_settings.widescreen = 1;
         } else if (strcmp(argv[i], "--nolauncher") == 0) {
             sbk_settings.launcher = 0;
+        } else if (strcmp(argv[i], "--uiscript") == 0 && i + 1 < argc) {
+            sbk_ui_script_set(argv[++i]);
         } else if (strcmp(argv[i], "--launcher") == 0) {
             sbk_settings.launcher = 1;
         } else if (strncmp(argv[i], "--volume=", 9) == 0) {
@@ -168,13 +170,16 @@ int main(int argc, char **argv) {
         } else if (strncmp(argv[i], "--resolution=", 13) == 0) {
             const char *v = argv[i] + 13;
             sbk_settings.resolution = strcmp(v, "n64") == 0 ? SBK_RES_N64 : (strcmp(v, "2x") == 0 ? SBK_RES_2X : SBK_RES_NATIVE);
+            sbk_settings_forced = 1;
         } else if (strncmp(argv[i], "--filter=", 9) == 0) {
             const char *v = argv[i] + 9;
             sbk_settings.filter = strcmp(v, "scanlines") == 0 ? SBK_FILTER_SCANLINES :
                                   strcmp(v, "grille") == 0 ? SBK_FILTER_GRILLE :
                                   strcmp(v, "smooth") == 0 ? SBK_FILTER_SMOOTH : SBK_FILTER_NONE;
+            sbk_settings_forced = 1;
         } else if (strncmp(argv[i], "--mode=", 7) == 0) {
             sbk_settings_apply_mode(strcmp(argv[i] + 7, "enhanced") == 0 ? SBK_MODE_ENHANCED : SBK_MODE_ORIGINAL);
+            sbk_settings_forced = 1;
             sbk_far_scale = (float)sbk_settings.draw_distance;
             sbk_wide_output = sbk_settings.widescreen;
         } else if (strncmp(argv[i], "-psn_", 5) == 0) {

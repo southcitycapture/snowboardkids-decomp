@@ -18,4 +18,8 @@ int sbk_ui_overlay_tick(void);
 
 int sbk_ui_overlay_open(void);
 
+/* --uiscript SEQ: drive the launcher and the overlay from a token string
+ * (u d l r a b m w .) so they can be tested and screenshotted over SSH. */
+void sbk_ui_script_set(const char *seq);
+
 #endif
