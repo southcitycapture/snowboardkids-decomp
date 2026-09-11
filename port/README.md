@@ -17,6 +17,7 @@ a fixed-function OpenGL 1.3 backend, scripted input.
 | Audio: aspMain (ABI 1) interpreter feeding SDL at 22050 Hz | done, music and effects play |
 | Performance: `--perf` phase timing; a race uses ~6 of 16.7 ms per retrace on the 1 GHz G4 | measured, headroom |
 | Self-play: `--autoplay` (CPU drives player 1), `--soak` (also walks menus), `--nightmare` | done |
+| Gamepad: SDL game-controller layer, hot-plug, raw fallback with mapping log | built, untested (no pad seen on USB yet) |
 | Fullscreen: exclusive mode, 4:3 letterbox, Cmd+Return/Cmd+F/F11 toggle, on by default from the Finder | done |
 | Gamepad, Rumble | next, in that order |
 

@@ -175,3 +175,18 @@ session, so headless render tests do not need the console runner.
 (Emill, MaikelChan) under a source-only license: redistribution in binary form
 is not allowed. This port is a personal project; do not publish binaries that
 include those files.
+
+## Open observations (2026-09-11 night)
+
+- "Stretched model" at item hits: `--dumpon` captures show flat beige
+  triangles at the rider when hit. They are the game's snow-chunk sprites
+  (32x32 CI4 at 0x80237f40, palette index 6 = opaque light beige for 84% of
+  texels), spawned by the spark-burst effect at the rider and drawn next to
+  the camera during the lift animation. Display list, texture and render
+  state (fog + texture edge) look intended. Not verified against hardware;
+  compare in an emulator with a controllable input plugin if it still looks
+  wrong.
+- Gamepad: SDL now has the IOKit joystick driver (build-tiger-joy), but the
+  controller the user plugged in did not appear on either USB bus (`ioreg -p
+  IOUSB` shows only the keyboard hub, keyboard and mouse). Check the cable or
+  port; the port hot-plugs and logs the pad's name and GUID when it appears.
