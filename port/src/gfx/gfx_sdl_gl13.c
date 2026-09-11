@@ -6,6 +6,7 @@
 #include "gfx_window_manager_api.h"
 #include "gfx_screen_config.h"
 #include "../platform/input.h"
+#include "../settings.h"
 
 extern void sbk_input_request_quit(void);
 
@@ -97,10 +98,58 @@ static void gfx_sdl_init(const char *window_title, bool start_in_fullscreen) {
     update_output_rect();
 }
 
+/* --- hooks for the launcher / overlay / resolution modes ---------------- */
+
+int gfx_gl13_render_width(void);
+int gfx_gl13_render_height(void);
+
+/* gfx_pc asks how big the framebuffer it draws into is. In the n64 / 2x
+ * resolution modes that is the small off-screen viewport, not the window. */
 static void gfx_sdl_get_dimensions(uint32_t *width, uint32_t *height) {
+    int rw = gfx_gl13_render_width();
+    if (rw > 0) {
+        *width = (uint32_t)rw;
+        *height = (uint32_t)gfx_gl13_render_height();
+        return;
+    }
     *width = (uint32_t)out_w;
     *height = (uint32_t)out_h;
 }
+
+void sbk_gfx_window_size(int *w, int *h) { *w = win_w; *h = win_h; }
+
+void sbk_gfx_refresh_output_rect(void) { update_output_rect(); }
+
+void sbk_gfx_set_vsync(int on) {
+    static int cur = -1;
+    if (wnd == NULL || on == cur) return;
+    cur = on;
+    if (sbk_novsync) return;    /* --novsync wins for the whole run */
+    SDL_GL_SetSwapInterval(on ? 1 : 0);
+}
+
+void sbk_gfx_swap(void) { if (wnd != NULL) SDL_GL_SwapWindow(wnd); }
+
+int sbk_gfx_is_fullscreen(void) {
+    return wnd != NULL && (SDL_GetWindowFlags(wnd) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
+static void set_fullscreen(int on) {
+    if (wnd == NULL) return;
+    if (on && !sbk_gfx_is_fullscreen()) {
+        apply_fullscreen_mode();
+        SDL_SetWindowFullscreen(wnd, fullscreen_flag());
+    } else if (!on && sbk_gfx_is_fullscreen()) {
+        SDL_SetWindowFullscreen(wnd, 0);
+        SDL_SetWindowSize(wnd, DESIRED_SCREEN_WIDTH, DESIRED_SCREEN_HEIGHT);
+    } else {
+        return;
+    }
+    SDL_GetWindowSize(wnd, &win_w, &win_h);
+    update_output_rect();
+}
+
+void sbk_gfx_set_fullscreen(int on) { set_fullscreen(on); }
 
 static void gfx_sdl_handle_events(void) {
     SDL_Event ev;
@@ -137,6 +186,8 @@ static void gfx_sdl_handle_events(void) {
                     }
                     SDL_GetWindowSize(wnd, &win_w, &win_h);
                     update_output_rect();
+                    sbk_settings.fullscreen = !f;
+                    sbk_settings_save();
                 }
                 break;
             default:

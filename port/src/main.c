@@ -18,6 +18,8 @@
 #include "gfx/gfx_pc.h"
 #include "gfx/gfx_window_manager_api.h"
 #include "gfx/gfx_rendering_api.h"
+#include "settings.h"
+#include "ui/ui.h"
 
 extern void sbk_game_main(void *arg);
 extern int sbk_rom_load(const char *path);
@@ -95,11 +97,27 @@ static const char *find_rom(int argc, char **argv) {
     return "snowboardkids.z64";
 }
 
+/* --play / --headless / --nolauncher: a scripted run. It must not read the
+ * settings file, must not show the launcher and must not apply any filter, so
+ * that golden replays stay bit-identical whatever the user last chose. */
+static int scripted_run(int argc, char **argv) {
+    int i;
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--headless") == 0 ||
+            strcmp(argv[i], "--nolauncher") == 0 || strcmp(argv[i], "--record") == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     const char *rom;
     setvbuf(stdout, NULL, _IONBF, 0); /* logs survive a crash */
     setvbuf(stderr, NULL, _IONBF, 0);
     rom = find_rom(argc, argv);
+    sbk_settings_scripted = scripted_run(argc, argv);
+    sbk_settings_load();
     int fullscreen = 0; /* 1 = yes, -1 = --windowed, 0 = default (fullscreen when SBK_FULLSCREEN=1 or launched from the Finder) */
     extern int sbk_wide_output;
     const char *pak_path = NULL;
@@ -111,6 +129,15 @@ int main(int argc, char **argv) {
     unsigned presented = 0;
     unsigned long retraces = 0;
     int i;
+
+    if (!sbk_settings_scripted) {
+        /* the file's values are this run's starting point; every flag below
+         * overrides its own key for this run only */
+        sbk_far_scale = (float)sbk_settings.draw_distance;
+        sbk_wide_output = sbk_settings.widescreen;
+        if (sbk_settings.fullscreen) fullscreen = 1;
+        sbk_perf_enabled = sbk_settings.perf;
+    }
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "-f") == 0) {
@@ -128,8 +155,28 @@ int main(int argc, char **argv) {
             sbk_novsync = 1;
         } else if (strcmp(argv[i], "--windowed") == 0) {
             fullscreen = -1;
+            sbk_settings.fullscreen = 0;
         } else if (strcmp(argv[i], "--wide") == 0) {
             sbk_wide_output = 1;
+            sbk_settings.widescreen = 1;
+        } else if (strcmp(argv[i], "--nolauncher") == 0) {
+            sbk_settings.launcher = 0;
+        } else if (strcmp(argv[i], "--launcher") == 0) {
+            sbk_settings.launcher = 1;
+        } else if (strncmp(argv[i], "--volume=", 9) == 0) {
+            sbk_settings.volume = atoi(argv[i] + 9);
+        } else if (strncmp(argv[i], "--resolution=", 13) == 0) {
+            const char *v = argv[i] + 13;
+            sbk_settings.resolution = strcmp(v, "n64") == 0 ? SBK_RES_N64 : (strcmp(v, "2x") == 0 ? SBK_RES_2X : SBK_RES_NATIVE);
+        } else if (strncmp(argv[i], "--filter=", 9) == 0) {
+            const char *v = argv[i] + 9;
+            sbk_settings.filter = strcmp(v, "scanlines") == 0 ? SBK_FILTER_SCANLINES :
+                                  strcmp(v, "grille") == 0 ? SBK_FILTER_GRILLE :
+                                  strcmp(v, "smooth") == 0 ? SBK_FILTER_SMOOTH : SBK_FILTER_NONE;
+        } else if (strncmp(argv[i], "--mode=", 7) == 0) {
+            sbk_settings_apply_mode(strcmp(argv[i] + 7, "enhanced") == 0 ? SBK_MODE_ENHANCED : SBK_MODE_ORIGINAL);
+            sbk_far_scale = (float)sbk_settings.draw_distance;
+            sbk_wide_output = sbk_settings.widescreen;
         } else if (strncmp(argv[i], "-psn_", 5) == 0) {
             if (fullscreen == 0) fullscreen = 1; /* launched from the Finder: go fullscreen */
         } else if (strcmp(argv[i], "--trace") == 0) {
@@ -208,8 +255,12 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--drawdistance") == 0 && i + 1 < argc) {
             sbk_far_scale = (float)atof(argv[++i]);
             if (sbk_far_scale < 0.25f) sbk_far_scale = 0.25f;
+            sbk_settings.draw_distance = (int)sbk_far_scale;
+            if (sbk_settings.draw_distance < 1) sbk_settings.draw_distance = 1;
+            if (sbk_settings.draw_distance > 4) sbk_settings.draw_distance = 4;
         } else if (strcmp(argv[i], "--perf") == 0) {
             sbk_perf_enabled = 1;
+            sbk_settings.perf = 1;
         } else if (strcmp(argv[i], "--racedbg") == 0) {
             sbk_race_debug_enabled = 1;
         } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
@@ -233,6 +284,8 @@ int main(int argc, char **argv) {
     }
     if (fullscreen == 0 && getenv("SBK_FULLSCREEN") != NULL && getenv("SBK_FULLSCREEN")[0] == '1') fullscreen = 1;
     gfx_init(&gfx_sdl_gl13_wapi, &gfx_gl13_rapi, "Snowboard Kids", fullscreen > 0);
+    sbk_settings.fullscreen = fullscreen > 0;
+    sbk_settings_apply();
     sbk_input_init();
     if (!nopak) {
         sbk_pak_open(pak_path);

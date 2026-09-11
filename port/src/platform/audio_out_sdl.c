@@ -11,6 +11,15 @@ static Uint8 sbk_ring[RING_BYTES];
 static volatile Uint32 sbk_ring_read, sbk_ring_write; /* byte offsets, monotonically increasing */
 static SDL_AudioDeviceID sbk_dev;
 static Uint32 sbk_rate = 22050;
+static int sbk_volume = 100;    /* settings.txt volume=0..100 */
+
+void sbk_audio_out_set_volume(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    sbk_volume = percent;
+}
+
+int sbk_audio_out_get_volume(void) { return sbk_volume; }
 
 static void sbk_audio_cb(void *userdata, Uint8 *stream, int len) {
     Uint32 avail = sbk_ring_write - sbk_ring_read;
@@ -71,6 +80,20 @@ void sbk_audio_out_queue(const void *samples, uint32_t bytes) {
         return;
     }
     SDL_LockAudioDevice(sbk_dev);
+    if (sbk_volume != 100) {
+        /* big-endian signed 16-bit: scale in place into a small staging copy */
+        static Uint8 scaled[4096];
+        Uint32 n = bytes < sizeof(scaled) ? bytes : (Uint32)sizeof(scaled);
+        Uint32 j;
+        for (j = 0; j + 1 < n; j += 2) {
+            int v = (int)(Sint16)((src[j] << 8) | src[j + 1]);
+            v = v * sbk_volume / 100;
+            scaled[j] = (Uint8)((v >> 8) & 0xFF);
+            scaled[j + 1] = (Uint8)(v & 0xFF);
+        }
+        src = scaled;
+        bytes = n;
+    }
     if (sbk_ring_write - sbk_ring_read + bytes > RING_BYTES) {
         bytes = RING_BYTES - (sbk_ring_write - sbk_ring_read); /* overrun: drop the tail */
     }

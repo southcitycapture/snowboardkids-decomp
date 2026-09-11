@@ -473,11 +473,32 @@ void gfx_gl13_set_output_rect(int x, int y, int w, int h, int win_w, int win_h) 
     out_x = x; out_y = y; out_w = w; out_h = h; out_win_w = win_w; out_win_h = win_h;
 }
 
+/* --- resolution modes and filters (settings.c drives these) ------------- */
+/* Filled in below; the render size is 0 in `native` mode, where gfx_pc draws
+ * straight into the output rectangle. */
+static int render_w, render_h;
+static int filter_mode;
+
+int gfx_gl13_render_width(void) { return render_w; }
+int gfx_gl13_render_height(void) { return render_h; }
+
+void gfx_gl13_set_render_scale(int mode) {
+    int w = 0, h = 0;
+    if (mode == 1) { w = 320; h = 240; }
+    else if (mode == 2) { w = 640; h = 480; }
+    if (w == render_w) return;
+    render_w = w; render_h = h;
+}
+
+void gfx_gl13_set_filter(int filter) { filter_mode = filter; }
+
 static void gl13_set_viewport(int x, int y, int width, int height) {
+    if (render_w > 0) { glViewport(x, y, width, height); return; }
     glViewport(x + out_x, y + out_y, width, height);
 }
 
 static void gl13_set_scissor(int x, int y, int width, int height) {
+    if (render_w > 0) { glScissor(x, y, width, height); return; }
     glScissor(x + out_x, y + out_y, width, height);
 }
 
