@@ -19,7 +19,8 @@ a fixed-function OpenGL 1.3 backend, scripted input.
 | Self-play: `--autoplay` (CPU drives player 1), `--soak` (also walks menus), `--nightmare` | done |
 | Gamepad: SDL game-controller layer, hot-plug, raw fallback with mapping log | built, untested (no pad seen on USB yet) |
 | Fullscreen: exclusive mode, 4:3 letterbox, Cmd+Return/Cmd+F/F11 toggle, on by default from the Finder | done |
-| Gamepad, Rumble | next, in that order |
+| Gamepad: SDL game controllers (HID pads) and Xbox One pads over USB via IOKit | done |
+| Rumble | next |
 
 Scripted input is deterministic: `--play` a text script or a Mupen `.m64`
 movie, `--record` one from a keyboard session, and two runs of the same script
@@ -172,6 +173,20 @@ PAUSE / CONTINUE / QUIT / RETRY overlay does not answer A at all -- only
 another START dismisses it -- so the session sits on the overlay forever. The
 first Big Snowman run lost 20 minutes of game time to exactly this. `nudge`
 sends A and stick-up only.
+
+## Gamepad
+
+HID pads (DualShock 4, most "DirectInput" pads, Xbox 360 with a driver) come
+through SDL's game-controller layer. Xbox One pads are not HID: they speak
+Microsoft's GIP protocol on a vendor interface and Leopard has no driver, so
+`port/src/platform/input_xone.c` talks to the pad itself through IOUSBLib
+(interface class ff/47/d0, power-on packets, 64-byte interrupt reports, the
+layout the Linux xpad driver documents). The SDL build for this is
+`isle-ppc-tools/tiger/build-sdl2-tiger-joy.sh` (joystick + haptic on, an
+IOHIDManager shim for the 10.4 SDK).
+
+Mapping: left stick = stick, A = A, B and X = B, Y = C-down (item), triggers
+= Z, LB/RB = L/R, Menu/View = Start, D-pad = D-pad, right stick = C buttons.
 
 ## Fullscreen
 

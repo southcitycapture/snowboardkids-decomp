@@ -148,6 +148,11 @@ $(BUILD)/game/%.o: $(GEN)/%.c $(GEN_FRAGMENTS) src/port_override.h
 	@mkdir -p $(dir $@)
 	$(CC) $(GAME_CFLAGS) -I$(dir $<) -I$(ROOT)/$(dir $*) -c -o $@ $<
 
+# the Xbox One driver includes the 10.4 SDK USB headers through a patched copy (compat/)
+$(BUILD)/port/src/platform/input_xone.o: src/platform/input_xone.c
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) -Isrc/platform/compat -c -o $@ $<
+
 $(BUILD)/port/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) -c -o $@ $<

@@ -18,6 +18,7 @@
 #include <SDL2/SDL.h>
 #include "../ultra/ultra.h"
 #include "input.h"
+#include "input_xone.h"
 
 static SDL_GameController *sbk_pad;
 static SDL_Joystick *sbk_joy;      /* raw fallback, or the controller's joystick for logging */
@@ -61,7 +62,11 @@ void sbk_input_init(void) {
         open_pad(i);
     }
     if (sbk_joy == NULL) {
-        printf("sbk: no gamepad; keyboard only\n");
+        if (sbk_xone_open()) {
+            /* an Xbox One pad on the vendor interface (input_xone.c) */
+        } else {
+            printf("sbk: no gamepad; keyboard only\n");
+        }
     }
 }
 
@@ -182,6 +187,28 @@ void sbk_input_update(void) {
         if (ry > 12000) b |= CONT_D;
         if (rx < -12000) b |= CONT_C;
         if (rx > 12000) b |= CONT_F;
+    } else if (sbk_xone_present()) {
+        struct sbk_xone_state xs;
+        sbk_xone_get(&xs);
+        map_stick(xs.lx, -xs.ly, &sbk_stick_x, &sbk_stick_y); /* map_stick expects SDL's Y-down */
+        if (xs.buttons & 0x10) b |= CONT_A;
+        if (xs.buttons & 0x20) b |= CONT_B;
+        if (xs.buttons & 0x40) b |= CONT_B;
+        if (xs.buttons & 0x80) b |= CONT_D;     /* Y: C-down, the item button */
+        if (xs.buttons & 0x04) b |= CONT_START; /* menu */
+        if (xs.buttons & 0x08) b |= CONT_START; /* view */
+        if (xs.dpad & 0x10) b |= CONT_L;
+        if (xs.dpad & 0x20) b |= CONT_R;
+        if (xs.lt > 256 || xs.rt > 256) b |= CONT_G;
+        if (xs.dpad & 0x01) b |= CONT_UP;
+        if (xs.dpad & 0x02) b |= CONT_DOWN;
+        if (xs.dpad & 0x04) b |= CONT_LEFT;
+        if (xs.dpad & 0x08) b |= CONT_RIGHT;
+        if (xs.ry > 12000) b |= CONT_E;
+        if (xs.ry < -12000) b |= CONT_D;
+        if (xs.rx < -12000) b |= CONT_C;
+        if (xs.rx > 12000) b |= CONT_F;
+        if (xs.guide) sbk_quit = sbk_quit; /* reserved */
     } else if (sbk_joy != NULL) {
         map_stick(SDL_JoystickGetAxis(sbk_joy, 0), SDL_JoystickGetAxis(sbk_joy, 1), &sbk_stick_x, &sbk_stick_y);
         if (SDL_JoystickGetButton(sbk_joy, 0)) b |= CONT_A;
