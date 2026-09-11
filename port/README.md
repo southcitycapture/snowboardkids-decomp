@@ -404,6 +404,15 @@ panels, so it is not a port bug.
 
 Design notes, survey facts and the gotchas are in `docs/PLAN.md`.
 
+## The sequel
+
+Snowboard Kids 2 has its own port on the same design: the `ppc-port` branch of
+[southcitycapture/snowboardkids2-decomp](https://github.com/southcitycapture/snowboardkids2-decomp)
+(`port/` there). It boots, walks its menus, saves to an emulated EEPROM and
+races on the G4; its one structural difference is run-time code overlays,
+handled with generated thunks. The launcher's second slot lights up once that
+port plays a full race.
+
 ## Licence note
 
 `src/gfx/gfx_pc.c` derives from sm64-port, whose licence allows source
