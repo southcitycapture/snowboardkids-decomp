@@ -151,19 +151,50 @@ session, so headless render tests do not need the console runner.
 
    Campaign state as of the first driven session (experiment pak
    `/Users/zach/trial-pak.mpk`, never the user's own save): Rookie Mountain and
-   Big Snowman won, 20,200G in the purse, six races run. Two things are still
-   open:
+   Big Snowman won, 20,200G in the purse, six races run, none of it saved.
 
-   - **The purse is not saved yet.** The Controller Pak is written only from
-     the Game Menu's EXIT / SAVE, and the driver's A presses walk straight from
-     the results screen back into the next race without ever stopping on the
-     Game Menu, so `savemoney` stayed 0. The driver needs a way back (B out of
-     the course select, most likely) before any course can be bought.
-   - **A trial win does not always transfer.** Sunset Rock (course 1) is won by
-     char=3 board=2 at boost 0 from a fresh save, but the same setup came 3rd,
-     3rd, 3rd and 2nd in the campaign. The trial races a fresh save and the
-     campaign does not, so the book needs re-measuring *in campaign conditions*,
-     not just from the title screen.
+7. **The campaign saves** (2026-09-11). `--autonav`
+   (`port/src/debug/menu_nav.c`) replaces the menu monkey with a navigator that
+   knows which screen is up: it walks `gActiveGameTaskList` and names each
+   task's callback with `dladdr()` (`--menutrace` prints them), so it can
+   branch on `updateRaceSplitscreenSelectMenu`,
+   `updateControllerPakRaceRecordSaveFlow` and the rest by name.
+
+   What the map turned out to be, from `race_flow.c`: the post-race **Game
+   Menu** is `updateRaceSplitscreenSelectMenu` and `gRaceSplitscreenMode`
+   decides where its A press goes -- 0/2 the next race, 1 the race type menu,
+   3 the shop, **4 EXIT / SAVE**. So the navigator parks that variable instead
+   of counting D-pad presses, exactly as `--trial` parks the course cursor.
+
+   Three things had to be *parked* rather than pressed, because a queued A
+   lands on a prompt the same frame it appears and a stick-up queued behind it
+   is a frame late -- each of these defaults to the answer that backs out:
+   `gControllerPakMenuState.confirmChoice = 0` (ARE YOU SURE -> YES),
+   `gMenuChoicePromptState[0] = 3` (DATA SAVE -> SAVE), and the same 3 on the
+   startup save menu (USE THIS SAVE; 4 is a new game, which is why every
+   restarted campaign began at 0G even with a saved pak). Before that fix the
+   save flow ran end to end and wrote nothing: `--status` read `savemoney` out
+   of RAM while the pak's note table stayed all zeros. The check that it is
+   real is the pak itself -- `NSKE` plus the game's note name at 0x300 -- and a
+   restart coming back up at money 15470 with the same win flags.
+
+   **The shop is the board shop.** The Game Menu's third entry leads to
+   `initCourseSelectMenu` -> `updateCourseSelectModeMenu`, whose three rows are
+   BOARD (FREE STYLE / ALL AROUND / ALPINE), PAINT and RETURN; screenshots
+   `g4-shots/shop-stuck.png` and `shop3.png`. An unaimed run sat in it for
+   100,000 retraces, which is what the navigator's stuck-screen watchdog (B out
+   after 3600 retraces with no change) now prevents. Where
+   `gCourseUnlockPrices` is actually spent is still open -- most likely the
+   pre-race course list itself. It does not hold the campaign up: the port
+   raises `gHighestUnlockedCourse`, so every course is offered and a win on a
+   course still for sale counts. Progression level 1 (wins on 0-4 and 9) was
+   reached without buying anything. `--shop` is off by default.
+
+   Still open: a trial win does not always transfer. Sunset Rock (course 1) was
+   won by char=3 board=2 at boost 0 from a fresh save but came 3rd repeatedly
+   in the campaign; re-measured under `--nopak --nopad` it needs boost 32, and
+   at that setting the campaign wins it. The book is worth re-measuring from a
+   played save rather than a fresh one.
 
 ## Build
 

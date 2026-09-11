@@ -188,15 +188,62 @@ the port looks up the course the race actually started on and applies that row.
     port/tools/nightmare_search.py drive 60     # walk it through the menus
     port/tools/nightmare_search.py status       # the last sbk-status line
 
-`drive` is the autopilot: between races it feeds A presses through `--cmds`,
-and it stays quiet while a race is under way.
+`drive` is the old autopilot (A presses through `--cmds`); the session itself
+now steers with `--autonav`.
 
-First driven session (2026-09-10): Rookie Mountain and Big Snowman won,
-20,200G earned over six races. Not yet solved: the driver never stops on the
-Game Menu, so EXIT / SAVE never runs and nothing reaches the pak; and Sunset
-Rock, which the trial wins at boost 0, came 3rd three times and 2nd once under
-campaign conditions -- the book wants re-measuring from a played save rather
-than a fresh one. See docs/PLAN.md.
+### `--autonav`: a navigator, not a monkey
+
+The purse only reaches the Controller Pak from the Game Menu's EXIT / SAVE, and
+an A-pressing monkey walks from the results screen straight back into the next
+race, so the first driven session earned 20,200G and saved none of it.
+`port/src/debug/menu_nav.c` fixes that by knowing where it is: it reads the
+active screen out of the game's own task list (`gActiveGameTaskList`) and names
+each task's callback with `dladdr()`, so `--menutrace` prints lines like
+
+    sbk-menu: r=20454 ms=2 money=3840 tasks: handleRaceRecordSaveOptionsFlow initControllerPakRaceRecordSaveFlow
+
+and the navigator can branch on real function names instead of counting frames.
+
+The map came out of `race_flow.c`. The post-race **Game Menu** is
+`updateRaceSplitscreenSelectMenu`, and `gRaceSplitscreenMode` decides what its
+A press does:
+
+| mode | goes to |
+|---|---|
+| 0, 2 | the course list, i.e. the next race |
+| 1 | the race type menu |
+| 3 | the shop (`initCourseSelectMenu`) |
+| 4 | **EXIT / SAVE** (`initControllerPakRaceRecordSaveFlow`) |
+
+So the navigator never counts D-pad presses: it parks the menu's own variable
+on the entry it wants and lets A confirm, the same aiming trick `--trial` uses
+for the course cursor. The same applies to every choice that defaults to the
+answer that backs out -- a queued A lands on a prompt the frame it appears, so
+stick-up always arrives too late:
+
+* ARE YOU SURE? -> `gControllerPakMenuState.confirmChoice = 0` (YES)
+* DATA SAVE -> `gMenuChoicePromptState[0] = 3` (SAVE; 4 leaves)
+* the startup save menu -> `gMenuChoicePromptState[0] = 3` (USE THIS SAVE; 4 is
+  a new game, which is why a restarted campaign always began at 0G)
+
+`--saveevery N` saves after every N races (default 1). A screen that has not
+changed in 3600 retraces gets a B and, if a purchase was under way, the
+purchase is abandoned -- an unattended session must not sit on a menu it does
+not understand.
+
+Verified end to end on the G4: three races won, three saves, the pak's note
+table carrying a real `NSKE` note, and after `g4 stop` and a fresh start the
+session came back up at **money=15470 savemoney=15470 won=1,1,0,...,1** --
+earned, saved, reloaded.
+
+**The shop is not the course shop.** `--shop` walks the Game Menu's shop entry,
+but the shop it reaches sells **boards** (FREE STYLE / ALL AROUND / ALPINE) and
+**paint**, with the third row the way out -- see `g4-shots/shop-stuck.png` and
+`shop3.png`. `gCourseUnlockPrices` is spent somewhere else. It costs the
+campaign nothing: the port raises `gHighestUnlockedCourse`, every course is
+offered, and a win on a course that is still for sale counts -- this session
+reached progression level 1 (wins on courses 0-4 and 9) having bought nothing.
+So `--shop` is off by default.
 
 **Never press START from the driver.** It is what `--soak`'s monkey does, and a
 START still queued when the next race begins *pauses* that race. Worse, the

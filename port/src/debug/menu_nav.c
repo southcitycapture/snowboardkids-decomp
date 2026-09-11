@@ -73,6 +73,32 @@ const char *sbk_menu_top(void) {
     return current_count ? sbk_fn_name((void *)current_callbacks[0]) : "-";
 }
 
+/* Every active task's callback name, joined: the screen's real identity. The
+ * first task is usually the parent *flow*, which does not change while a whole
+ * menu runs, so watching only the top name never sees the screen move. */
+const char *sbk_menu_names(void) {
+    static char buf[512];
+    int i;
+    buf[0] = 0;
+    for (i = 0; i < current_count; i++) {
+        strncat(buf, sbk_fn_name((void *)current_callbacks[i]), sizeof(buf) - strlen(buf) - 2);
+        strncat(buf, " ", sizeof(buf) - strlen(buf) - 2);
+    }
+    return buf;
+}
+
+/* The task whose next callback is `name` (gCurrentGameTask is NULL between the
+ * scheduler's dispatches, so a navigator cannot use it to reach a menu's own
+ * callbackData). */
+static GameTask *menu_task(const char *name) {
+    GameTask *t = gActiveGameTaskList.next;
+    while (t != NULL) {
+        if (strcmp(sbk_fn_name((void *)t->callbacks[0]), name) == 0) return t;
+        t = t->next;
+    }
+    return NULL;
+}
+
 static void menutrace(unsigned long retraces) {
     static char last[512];
     char now[512];
@@ -113,6 +139,10 @@ static void menutrace(unsigned long retraces) {
  */
 int sbk_autonav;        /* --autonav */
 int sbk_autonav_every = 1;  /* save after every N races */
+/* --shop: try to buy a course after a save. Off by default -- see the note on
+ * nav_pick_course: the shop the Game Menu leads to sells boards and paint, not
+ * courses, so this walks into a dead end. */
+int sbk_autonav_shop;
 
 enum { NAV_RACE = 0, NAV_SAVE = 1, NAV_SHOP = 2 };
 static int nav_want = NAV_RACE;
@@ -135,9 +165,21 @@ extern u8 gRaceSplitscreenMode;
  */
 static int nav_buy = -1;        /* the course being bought, -1 = none */
 
+/* Which course to buy next: the cheapest one still for sale that the purse
+ * covers. NOTE (2026-09-11): the shop reached from the Game Menu's third entry
+ * (initCourseSelectMenu -> updateCourseSelectModeMenu) turned out to sell
+ * BOARDS (row 0: FREE STYLE / ALL AROUND / ALPINE) and PAINT (row 1), with row
+ * 2 the way out -- screenshots g4-shots/shop-stuck.png and shop3.png. So the
+ * course prices in gCourseUnlockPrices are spent somewhere else, most likely
+ * from the pre-race course list itself, and this step is off unless --shop is
+ * given. The campaign does not need it: the port raises gHighestUnlockedCourse
+ * so every course is offered, and a locked course still counts as a win --
+ * this session reached progression level 1 (wins on 0-4 and 9) without buying
+ * anything. */
 static int nav_pick_course(void) {
     const GameSaveData *sd = &gGameSaveDataBuffer[0];
     int best = -1, k;
+    if (!sbk_autonav_shop) return -1;
     for (k = 0; k < 9; k++) {
         if (sd->courseUnlockStates[k] != -1) continue;
         if ((u32)gRacePlayers[0].money < gCourseUnlockPrices[k]) continue;
@@ -191,9 +233,9 @@ static void nav_press(const char *line) {
 }
 
 static void nav_act(unsigned long retraces) {
-    static char last_top[128];
+    static char last_top[512];
     static unsigned long top_since;
-    const char *top = sbk_menu_top();
+    const char *top = sbk_menu_names();
     if (strcmp(top, last_top) != 0) {
         snprintf(last_top, sizeof(last_top), "%s", top);
         top_since = retraces;
@@ -204,7 +246,7 @@ static void nav_act(unsigned long retraces) {
      * navigator does not understand. Back out with B and, if a purchase was
      * under way, give it up -- an unattended session must not sit on a menu
      * for an hour, which is how the board shop swallowed the first run. */
-    if (retraces - top_since > 2400) {
+    if (retraces - top_since > 3600) {
         printf("sbk-nav: stuck on %s for %lu retraces, backing out\n", top, retraces - top_since);
         fflush(stdout);
         top_since = retraces;
@@ -220,15 +262,23 @@ static void nav_act(unsigned long retraces) {
      * (FREE STYLE / ALL AROUND / ALPINE, which is where an unaimed run ended
      * up and sat), 2 RETURN. */
     if (sbk_menu_on("updateCourseSelectModeMenu")) {
-        gCourseSelectModeSelection = (u8)(nav_buy >= 0 ? 0 : 2);
+        /* Measured, not guessed: with the front page left on 0 the shop opens
+         * the BOARD list (FREE STYLE / ALL AROUND / ALPINE), so the course
+         * shop is 1 -- which is also the only value that routes the confirm to
+         * updateCourseSelectUnlockCourseList (course_select_menu.c). 2 is
+         * RETURN. */
+        gCourseSelectModeSelection = (u8)(nav_buy >= 0 ? 1 : 2);
+        printf("sbk-nav: shop front page, mode=%d buy=%d\n", gCourseSelectModeSelection, nav_buy);
+        fflush(stdout);
         nav_press("press A 3");
         return;
     }
     if (sbk_menu_on("updateCourseSelectPurchasePrompt")) {
         /* callbackData1: 0 = buy, 1 = cancel; 2 and up is the purchase
          * animation, which answers nothing -- pressing A into it only stalls. */
-        if (gCurrentGameTask != NULL && gCurrentGameTask->callbackData1 < 2) {
-            gCurrentGameTask->callbackData1 = 0;
+        GameTask *t = menu_task("updateCourseSelectPurchasePrompt");
+        if (t != NULL && t->callbackData1 < 2) {
+            t->callbackData1 = 0;
             nav_press("press A 3");
         }
         return;
@@ -237,6 +287,10 @@ static void nav_act(unsigned long retraces) {
         if (nav_buy >= 0) {
             gCharacterSelectHighlightedRosterIndices[0] = (s8)(nav_buy % 3);
             gMenuChoicePromptState[0] = (s16)(nav_buy / 3 + 2);
+            printf("sbk-nav: shop list, aim course %d (col %d row %d) sel=%d state=%d\n", nav_buy,
+                   nav_buy % 3, nav_buy / 3, gRacePlayers[0].menuSelection,
+                   gGameSaveDataBuffer[0].courseUnlockStates[nav_buy]);
+            fflush(stdout);
             nav_press("press A 3");
         } else {
             nav_press("press B 3");

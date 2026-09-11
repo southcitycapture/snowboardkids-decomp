@@ -161,6 +161,9 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--autonav") == 0) {
             extern int sbk_autonav;
             sbk_autonav = 1;    /* drive the menus by name: race, save, shop */
+        } else if (strcmp(argv[i], "--shop") == 0) {
+            extern int sbk_autonav_shop;
+            sbk_autonav_shop = 1;
         } else if (strcmp(argv[i], "--saveevery") == 0 && i + 1 < argc) {
             extern int sbk_autonav_every;
             sbk_autonav_every = atoi(argv[++i]);
