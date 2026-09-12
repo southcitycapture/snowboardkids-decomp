@@ -797,6 +797,7 @@ static void gl13_end_frame(void) {
 }
 
 int sbk_frame_dump_left; /* debug: dump the next N presented frames to /tmp/sbk-frame-N.ppm */
+int sbk_frame_dump_tag = -1; /* --shotat: name the next dump after the retrace it was asked for */
 int sbk_hash_frames;     /* --hashframe: FNV-1a of every presented frame, for determinism tests */
 unsigned sbk_last_frame_hash;
 
@@ -831,7 +832,12 @@ static void gl13_finish_render(void) {
         px = malloc((size_t)w * h * 3);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
         glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px);
-        snprintf(name, sizeof(name), "/tmp/sbk-frame-%02d.ppm", index++);
+        if (sbk_frame_dump_tag >= 0) {
+            snprintf(name, sizeof(name), "/tmp/sbk-shot-%06d.ppm", sbk_frame_dump_tag);
+            sbk_frame_dump_tag = -1;
+        } else {
+            snprintf(name, sizeof(name), "/tmp/sbk-frame-%02d.ppm", index++);
+        }
         f = fopen(name, "wb");
         if (f != NULL) {
             fprintf(f, "P6\n%d %d\n255\n", w, h);

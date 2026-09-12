@@ -44,7 +44,13 @@ static uint32_t segment_table[16];
 #define RATIO_Y (gfx_current_dimensions.height / (2.0f * HALF_SCREEN_HEIGHT))
 
 #define MAX_BUFFERED 256
-#define MAX_LIGHTS 2
+/* F3DEX/F3DEX2 allow up to seven directional lights plus the ambient.
+ * sm64-port shipped 2 because Mario never needs more; Snowboard Kids 2
+ * loads FOUR (gSPLight n=1..3 then the ambient at n=4, graphics.c:582),
+ * so at 2 the ambient was dropped by the G_MV_LIGHT guard and the shade
+ * read current_lights[3] and current_lights_coeffs[2] past their arrays.
+ * Every lit model came out dark and off-hue against the emulator. */
+#define MAX_LIGHTS 7
 #define MAX_VERTICES 64
 
 struct RGBA {
@@ -1252,13 +1258,33 @@ static void gfx_sp_moveword(uint8_t index, uint16_t offset, uint32_t data) {
         case G_MW_NUMLIGHT:
 #ifdef F3DEX_GBI_2
             rsp.current_num_lights = data / 24 + 1; // add ambient light
+            if (rsp.current_num_lights > MAX_LIGHTS + 1) rsp.current_num_lights = MAX_LIGHTS + 1;
+            if (rsp.current_num_lights < 1) rsp.current_num_lights = 1;
 #else
             // Ambient light is included
             // The 31th bit is a flag that lights should be recalculated
             rsp.current_num_lights = (data - 0x80000000U) / 32;
+            if (rsp.current_num_lights > MAX_LIGHTS + 1) rsp.current_num_lights = MAX_LIGHTS + 1;
+            if (rsp.current_num_lights < 1) rsp.current_num_lights = 1;
 #endif
             rsp.lights_changed = 1;
             break;
+        case G_MW_LIGHTCOL: {
+            /* gSPLightColor: the sequel's model renderer overrides each object's
+             * two light colours this way (src/graphics/displaylist.c) and puts
+             * the viewport's back afterwards, so ignoring it lit every model
+             * with whatever gSPLight last wrote -- the title riders, the town
+             * and the race models all came out dark and off-hue.  The offsets
+             * are G_MWO_aLIGHT_n / bLIGHT_n, one light per 32 bytes,
+             * a and b being the RDP's two copies of the same colour. */
+            unsigned i = offset / 32;
+            if (i <= MAX_LIGHTS) {
+                rsp.current_lights[i].col[0] = rsp.current_lights[i].colc[0] = (data >> 24) & 0xFF;
+                rsp.current_lights[i].col[1] = rsp.current_lights[i].colc[1] = (data >> 16) & 0xFF;
+                rsp.current_lights[i].col[2] = rsp.current_lights[i].colc[2] = (data >> 8) & 0xFF;
+            }
+            break;
+        }
         case G_MW_FOG:
             rsp.fog_mul = (int16_t)(data >> 16);
             rsp.fog_offset = (int16_t)data;
