@@ -439,7 +439,12 @@ static void import_texture_i4(int tile) {
         rgba32_buf[4*i + 0] = SCALE_4_8(r);
         rgba32_buf[4*i + 1] = SCALE_4_8(g);
         rgba32_buf[4*i + 2] = SCALE_4_8(b);
-        rgba32_buf[4*i + 3] = 255;
+        /* The RDP replicates intensity into alpha for G_IM_FMT_I: an I4/I8
+         * texel is (I,I,I,I), not (I,I,I,1).  sm64-port wrote 255 because
+         * SM64's alpha masks are all IA; the sequel's rider shadow is a
+         * 16x16 I4 circle drawn with G_CC_MODULATEIA (nonrace_shadow.c),
+         * so an opaque alpha turned every shadow into a grey square. */
+        rgba32_buf[4*i + 3] = SCALE_4_8(intensity);
     }
 
     uint32_t width = rdp.texture_tile.line_size_bytes * 2;
@@ -459,7 +464,12 @@ static void import_texture_i8(int tile) {
         rgba32_buf[4*i + 0] = r;
         rgba32_buf[4*i + 1] = g;
         rgba32_buf[4*i + 2] = b;
-        rgba32_buf[4*i + 3] = 255;
+        /* The RDP replicates intensity into alpha for G_IM_FMT_I: an I4/I8
+         * texel is (I,I,I,I), not (I,I,I,1).  sm64-port wrote 255 because
+         * SM64's alpha masks are all IA; the sequel's rider shadow is a
+         * 16x16 I4 circle drawn with G_CC_MODULATEIA (nonrace_shadow.c),
+         * so an opaque alpha turned every shadow into a grey square. */
+        rgba32_buf[4*i + 3] = intensity;
     }
 
     uint32_t width = rdp.texture_tile.line_size_bytes;
