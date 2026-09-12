@@ -694,6 +694,12 @@ static void gfx_sp_pop_matrix(uint32_t count) {
             if (rsp.modelview_matrix_stack_size > 0) {
                 gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
             }
+            /* A pop changes the modelview just as a load does, and the cached
+             * light directions are in the modelview's space.  gSPPopMatrix did
+             * not say so, so the first lit vertex after a pop was shaded with
+             * the *pushed* object's light directions.  sm64-port never noticed:
+             * SM64's geo layout pops and immediately loads. */
+            rsp.lights_changed = 1;
         }
     }
 }
@@ -1759,12 +1765,11 @@ void gfx_debug_flush_texture_cache(void) {
     rendering_state.textures[0] = rendering_state.textures[1] = NULL;
 }
 
-/* For the display-list dumper: resolve with the current segment table. */
-void *gfx_debug_seg_addr(uint32_t w1) {
-    return seg_addr(w1);
-}
-void gfx_debug_set_segment(uint32_t seg, uint32_t base) {
-    segment_table[seg & 0xF] = base;
+/* For the display-list dumper: a copy of the segment table to resolve against.
+ * The dumper works on the copy, so a branch the RSP would never take cannot
+ * leave a segment base behind for the real run of the same list. */
+void gfx_debug_get_segments(uint32_t out[16]) {
+    memcpy(out, segment_table, sizeof(segment_table));
 }
 
 #define C0(pos, width) ((cmd->words.w0 >> (pos)) & ((1U << width) - 1))

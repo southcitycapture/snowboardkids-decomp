@@ -71,7 +71,7 @@ static const char *find_rom(int argc, char **argv) {
         if (argv[i][0] != '-') {
             return argv[i];
         }
-        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--drawdistance") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--shotat") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0 || strcmp(argv[i], "--saveevery") == 0 || strcmp(argv[i], "--uiscript") == 0) {
+        if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--drawdistance") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--shotat") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0 || strcmp(argv[i], "--saveevery") == 0 || strcmp(argv[i], "--uiscript") == 0 || strcmp(argv[i], "--dumpdlat") == 0) {
             i++; /* option value */
         }
     }
@@ -125,6 +125,21 @@ static void sbk_shotat_parse(const char *spec) {
         if (end == p) break;
         sbk_shotat[sbk_shotat_n++] = v;
         p = (*end == ',') ? end + 1 : end;
+    }
+}
+
+/* --dumpdlat R[:N]: dump the display lists of the next N gfx tasks (8 by
+ * default) once retrace R comes round.  --dumpdl counts gfx tasks from boot,
+ * which is no way to find the list that drew a particular moment of a race. */
+static unsigned long sbk_dumpdlat_retrace;
+static int sbk_dumpdlat_tasks = 8;
+
+static void sbk_dumpdlat_parse(const char *spec) {
+    char *end;
+    sbk_dumpdlat_retrace = strtoul(spec, &end, 10);
+    if (*end == ':' || *end == ',') {
+        int n = atoi(end + 1);
+        if (n > 0) sbk_dumpdlat_tasks = n;
     }
 }
 
@@ -211,6 +226,8 @@ int main(int argc, char **argv) {
             sbk_dump_task = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--shotat") == 0 && i + 1 < argc) {
             sbk_shotat_parse(argv[++i]);
+        } else if (strcmp(argv[i], "--dumpdlat") == 0 && i + 1 < argc) {
+            sbk_dumpdlat_parse(argv[++i]);
         } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             max_frames = strtoul(argv[++i], NULL, 10); /* quit after N retraces */
         } else if (strcmp(argv[i], "--dumpframes") == 0 && i + 1 < argc) {
@@ -390,6 +407,10 @@ int main(int argc, char **argv) {
             sbk_frame_dump_tag = (int)retraces;
             sbk_frame_dump_left = 1;
             sbk_shotat_i++;
+        }
+        if (sbk_dumpdlat_retrace != 0 && retraces == sbk_dumpdlat_retrace) {
+            extern int sbk_dump_tasks_left;
+            sbk_dump_tasks_left = sbk_dumpdlat_tasks;
         }
         sbk_perf_frame();
         sbk_autoplay_tick(retraces);

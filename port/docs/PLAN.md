@@ -388,6 +388,43 @@ with vertex colours) and `regress` passes 8/8 after both:
   now take alpha from the intensity. The sequel's rider shadow is a 16x16 I4
   circle drawn with `G_CC_MODULATEIA` and was rendering as a grey square.
 
+Three more carried over on 2026-09-12 night, again with no pixel changed here
+(`regress` 8/8 after them, and the first game never enables lighting at all):
+
+* **The display-list dumper no longer walks off RDRAM.** `--dumpdl` on one of
+  the sequel's race tasks died with SIGSEGV, and the same `dump_addr_ok` is in
+  this tree.  It vetted the **unresolved** command word: anything below
+  `0x10000000` was assumed segmented and let through whatever the segment base
+  happened to hold, and anything at or above it was dereferenced as a native
+  pointer.  A dump follows branches the RSP never takes, so it is handed
+  nonsense by design.  It now resolves first and then checks -- `size` bytes
+  inside the emulated RDRAM, 8-byte aligned as the RSP's own DMA requires, the
+  walk of a nested list clamped to the room left before the end of memory --
+  and the dumper keeps its own copy of the segment table rather than writing
+  into `gfx_pc`'s, where a skipped branch could leave a base behind for the
+  real run of the same list.  `--dumpdlat R[:N]` came with it: arm the dump at
+  a *retrace* and take the next N gfx tasks, because a gfx task count from boot
+  is no way to find the list that drew one moment of a race.
+* **`gSPPopMatrix` has to recalculate the light directions.**
+  `calculate_normal_dir` caches each light's direction in the modelview's
+  space and `rsp.lights_changed` says when the cache is stale; `gSPMatrix` set
+  it and `gSPPopMatrix` did not, so the first lit vertex after a pop was shaded
+  with the pushed object's light directions.  Moot in this game, which never
+  turns `G_LIGHTING` on, but it is the same shared `gfx_pc.c`.
+* **The reference tooling is in the tree**: `port/tools/input_m64.c`,
+  `port/tools/mkm64.py` and `port/docs/reference-frames.md`.  One trap the
+  audit did not write down at the time -- `--input <path>` on its own makes
+  mupen64plus look for *every* plugin next to that path, so it finds no video
+  plugin and dies inside `osd_init`; pass `--plugindir` as well.  (And the
+  emulator stops at the **last** `--testshots` entry without capturing it, so
+  the list wants a sentinel frame on the end.)
+
+The sequel's one open rendering item, "the near rider is black under the
+overhead camera", closed on 2026-09-12 as **not a bug**: the attract demo's
+frame-exact pair (port retrace 1444, emulator VI 2000) shows the same near-black
+histogram on both sides.  The rider's hair really is an RGBA5551 texel whose
+components are 1.
+
 Open, and not a renderer question: the `SETTIMG outside RDRAM` guard fires
 eight times a run at `0x80cc0100`, above the 4 MB window. It is the
 `renderCourseTextureMarkers` class of garbage descriptor the guard was
