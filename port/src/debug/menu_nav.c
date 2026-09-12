@@ -48,15 +48,33 @@ static void collect_tasks(void) {
     }
 }
 
+/* dladdr() walks the binary's symbol table, a few hundred microseconds on the
+ * G4, and the navigator names every live task several times a retrace from
+ * the host loop, outside every perf phase. In the sequel's port that ran the
+ * game at 73% of real time with the counters showing nothing wrong. Callbacks
+ * are code, so the name of an address never changes: look each one up once. */
+#define NAME_CACHE 256
+static struct { const void *fn; char name[64]; } name_cache[NAME_CACHE];
+static int name_cache_n;
+
 const char *sbk_fn_name(void *fn) {
-    static char buf[128];
+    static char buf[64];
     Dl_info info;
+    int i;
     if (fn == NULL) return "-";
+    for (i = 0; i < name_cache_n; i++) {
+        if (name_cache[i].fn == fn) return name_cache[i].name;
+    }
     if (dladdr(fn, &info) && info.dli_sname != NULL) {
         snprintf(buf, sizeof(buf), "%s", info.dli_sname);
-        return buf;
+    } else {
+        snprintf(buf, sizeof(buf), "%p", fn);
     }
-    snprintf(buf, sizeof(buf), "%p", fn);
+    if (name_cache_n < NAME_CACHE) {
+        name_cache[name_cache_n].fn = fn;
+        snprintf(name_cache[name_cache_n].name, sizeof(name_cache[0].name), "%s", buf);
+        return name_cache[name_cache_n++].name;
+    }
     return buf;
 }
 
