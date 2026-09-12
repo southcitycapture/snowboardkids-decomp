@@ -342,3 +342,55 @@ include those files.
   controller the user plugged in did not appear on either USB bus (`ioreg -p
   IOUSB` shows only the keyboard hub, keyboard and mouse). Check the cable or
   port; the port hot-plugs and logs the pad's name and GUID when it appears.
+
+## The rendering audit, 2026-09-12
+
+Every screen the first game has was put next to the real game's frame. The
+verdict is that **the first game's renderer matches**: logos, the title demo
+race, the title screen, mode select, the Controller Pak prompts, rider
+select, the Game Menu, the course list and detail, board select, the race
+itself and the finish all place the same pixels, and the only differences
+found were one-frame offsets in menu wipes and in the START banner.
+
+How the references were made, because the method is reusable:
+
+* `mupen64plus-ui-console` has no movie playback, so the audit built a
+  ~60-line **input plugin that replays a `.m64`** -- `GetKeys` hands out one
+  sample per controller read, `SBK_M64` names the file. `port/scripts/golden/
+  *.m64` are real Mupen64 TAS files, so the same movie drives the native G4
+  build and the emulator on the Mac. `--testshots f1,f2,...` writes the
+  emulator's frame at the VI count the port's new `--shotat` dumps, and the
+  two stills can be subtracted.
+* The one thing an input replay cannot reproduce is an `--autoplay` race:
+  autoplay flips `gRacePlayers[0].isCpu`, which is game state, not input.
+  A pure-input replay of any golden therefore lands on Rookie Mt. (the course
+  the menu starts on) and sits at the start line -- which is still a perfectly
+  good, frame-exact comparison of every menu and of that course's scenery.
+  For the courses the campaign reaches, a 480p longplay was used instead:
+  good for "is this element present and is the geometry right", not for
+  colour.
+* A text script in `--play` syntax can be compiled to a `.m64` with the same
+  semantics (`wait` / `press` / `hold` / `release` / `stick`), so new
+  references can be authored for a screen without recording on the G4 first.
+
+Contact sheet: `sbk1-audit.png` in the session's scratchpad.
+
+Two changes carried over from the sequel's half of the audit, neither of
+which alters a pixel here -- this game never turns hardware lighting on
+(every `gsSP*GeometryMode` in `src/` *clears* `G_LIGHTING`; models are drawn
+with vertex colours) and `regress` passes 8/8 after both:
+
+* `MAX_LIGHTS` is 7 rather than sm64-port's 2, and `G_MW_LIGHTCOL`
+  (`gSPLightColor`) is implemented. In the sequel a four-light viewport
+  against `MAX_LIGHTS 2` dropped the ambient and read past the light arrays,
+  which put every rider at about 0.4x brightness.
+* An I4/I8 texel is `(I,I,I,I)`, not `(I,I,I,1)`: `import_texture_i4`/`i8`
+  now take alpha from the intensity. The sequel's rider shadow is a 16x16 I4
+  circle drawn with `G_CC_MODULATEIA` and was rendering as a grey square.
+
+Open, and not a renderer question: the `SETTIMG outside RDRAM` guard fires
+eight times a run at `0x80cc0100`, above the 4 MB window. It is the
+`renderCourseTextureMarkers` class of garbage descriptor the guard was
+written for -- hardware would load it harmlessly and never show it -- and the
+rider-select and course-select screens it fires on are pixel-identical to the
+emulator, so nothing visible is being skipped.
