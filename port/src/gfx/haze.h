@@ -34,6 +34,13 @@ int sbk_fadein_note_cull(int range);
  * the menu and overlay ones. */
 extern int sbk_race_proj_on;
 
+/* Which matrices belong to an object the cull applies to: patches.txt has the
+ * game's own matrix builder hand each one over, and gfx_pc asks before it
+ * fades a draw.  Cleared once the frame's display list has been walked. */
+void sbk_fadein_note_object(const void *mtx);
+int sbk_fadein_is_object(const void *mtx);
+void sbk_fadein_frame_end(void);
+
 /* --fadedbg counters. */
 extern unsigned sbk_fadein_dbg_draws, sbk_fadein_dbg_faded;
 extern float sbk_fadein_dbg_min;

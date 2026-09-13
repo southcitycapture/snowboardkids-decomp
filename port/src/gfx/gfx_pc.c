@@ -161,6 +161,11 @@ static struct RSP {
      * scale that turns a vertex's w into world units turns this one.  It is
      * recomputed wherever MP is, i.e. once per G_MTX, not once per vertex. */
     float obj_dist;
+    /* 1 when the modelview now loaded is one the game built for an object the
+     * camera-distance cull applies to (haze.c's table).  Terrain is drawn
+     * under matrices that never appear there, which is what keeps a distant
+     * chunk of course from being faded like a distant prop. */
+    bool obj_fadeable;
 
     struct {
         // U0.16
@@ -780,6 +785,11 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
     }
     gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
     rsp.obj_dist = rsp.MP_matrix[3][3] * rsp.haze_w_to_dist;
+    if (parameters & G_MTX_PROJECTION) {
+        rsp.obj_fadeable = false;
+    } else if (sbk_fadein_on) {
+        rsp.obj_fadeable = sbk_fadein_is_object(addr) != 0;
+    }
 }
 
 static void gfx_sp_pop_matrix(uint32_t count) {
@@ -789,6 +799,7 @@ static void gfx_sp_pop_matrix(uint32_t count) {
             if (rsp.modelview_matrix_stack_size > 0) {
                 gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
                 rsp.obj_dist = rsp.MP_matrix[3][3] * rsp.haze_w_to_dist;
+                rsp.obj_fadeable = false;   /* a pop lands back on the viewport */
             }
             /* A pop changes the modelview just as a load does, and the cached
              * light directions are in the modelview's space.  gSPPopMatrix did
@@ -1108,7 +1119,8 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
      * test is only a guard, so that a single sheet of terrain running from
      * under the camera out to the horizon can never be faded. */
     float fade = 1.0f;
-    if (sbk_fadein_on && rsp.haze_proj && rsp.obj_dist > sbk_fadein_start) {
+    if (sbk_fadein_on && rsp.haze_proj && rsp.obj_fadeable &&
+        rsp.obj_dist > sbk_fadein_start) {
         float nearest = v_arr[0]->dist;
         if (v_arr[1]->dist < nearest) nearest = v_arr[1]->dist;
         if (v_arr[2]->dist < nearest) nearest = v_arr[2]->dist;
@@ -2308,6 +2320,9 @@ void gfx_present(void) {
     SBK_PERF_TIMED(SBK_PERF_SWAP, gfx_wapi->swap_buffers());
     frame_open = false;
     gl_held_target = NULL; /* the back buffer is undefined after a swap */
+    /* The object matrices this frame registered came out of a per-frame
+     * scratch allocator; next frame's pointers mean something else. */
+    sbk_fadein_frame_end();
 }
 
 void gfx_set_window_title(const char *title) {

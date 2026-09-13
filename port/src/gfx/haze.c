@@ -47,6 +47,7 @@
  */
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 #include "haze.h"
 #include "../ultra/ultra.h"
 #include "game/race/player/race_player_input.h"
@@ -117,6 +118,64 @@ int sbk_fadein_note_cull(int range) {
  * is where the first game's own fog is already most of the way to total, so
  * Original loses nothing by not having it. */
 #define FADEIN_FRAC 0.86f
+
+/* --- which matrices belong to a cullable object -------------------------
+ *
+ * The first version of the fade keyed on the object's origin distance alone
+ * (MP[3][3]), guarded by "all three vertices are past the start of the band".
+ * That is not enough, and the sequel said so loudly: at --drawdistance 4 it
+ * faded 20,000 of 40,000 triangles a second down to alpha 0, because the
+ * course's own terrain is drawn in chunks with their own far-away origins and
+ * every chunk past 3,504 units looked exactly like a distant prop.
+ *
+ * So the port stops guessing and lets the game say which matrices belong to
+ * the objects the cull applies to.  Each game has one function that builds an
+ * object's transform matrix -- allocFixedTransformMatrix in the first game,
+ * setupDisplayListMatrix in the sequel -- and patches.txt has it hand the
+ * pointer over.  gfx_pc then fades a draw only when the modelview it loaded
+ * is one of those.  Terrain, the sky and the HUD never appear in the table.
+ *
+ * The table is cleared after every frame's display list is walked, because
+ * the matrices come out of a per-frame scratch allocator: a pointer from the
+ * last frame means nothing.  A collision loses one object's fade, never
+ * anything else, so eviction is a shrug rather than a problem. */
+#define FADEIN_TABLE 1024
+#define FADEIN_PROBE 4
+static const void *fadein_mtx[FADEIN_TABLE];
+static int fadein_mtx_used;
+
+void sbk_fadein_note_object(const void *mtx) {
+    unsigned long h;
+    int i;
+    if (!sbk_fadein_on || mtx == NULL) return;
+    h = ((unsigned long)mtx >> 6) ^ ((unsigned long)mtx >> 3);
+    for (i = 0; i < FADEIN_PROBE; i++) {
+        unsigned k = (unsigned)((h + (unsigned long)i) & (FADEIN_TABLE - 1));
+        if (fadein_mtx[k] == mtx) return;
+        if (fadein_mtx[k] == NULL) { fadein_mtx[k] = mtx; fadein_mtx_used = 1; return; }
+    }
+    fadein_mtx[(unsigned)(h & (FADEIN_TABLE - 1))] = mtx;   /* evict: one lost fade */
+    fadein_mtx_used = 1;
+}
+
+int sbk_fadein_is_object(const void *mtx) {
+    unsigned long h;
+    int i;
+    if (!fadein_mtx_used || mtx == NULL) return 0;
+    h = ((unsigned long)mtx >> 6) ^ ((unsigned long)mtx >> 3);
+    for (i = 0; i < FADEIN_PROBE; i++) {
+        unsigned k = (unsigned)((h + (unsigned long)i) & (FADEIN_TABLE - 1));
+        if (fadein_mtx[k] == mtx) return 1;
+        if (fadein_mtx[k] == NULL) return 0;
+    }
+    return 0;
+}
+
+void sbk_fadein_frame_end(void) {
+    if (!fadein_mtx_used) return;
+    memset(fadein_mtx, 0, sizeof(fadein_mtx));
+    fadein_mtx_used = 0;
+}
 
 void sbk_haze_frame(void) {
     static int last_course = -1;

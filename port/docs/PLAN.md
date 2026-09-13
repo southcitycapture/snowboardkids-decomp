@@ -549,10 +549,21 @@ a clip-space *w* into world units.  Two things are new:
   origin, once per `G_MTX`.  A prop then fades as one object instead of
   across its own depth, which is what a per-vertex ramp would have done.
 
-The guard that matters: a triangle only fades if all three of its vertices are
-also past the start of the band.  Without it, one sheet of terrain running
-from under the camera to the horizon is a single object at a far origin, and
-fading it would punch a hole in the course.
+* `sbk_fadein_note_object()`, also in `patches.txt`, on
+  `allocFixedTransformMatrix` -- the game's own builder for a prop's, an
+  effect's or a projectile's transform.  `haze.c` keeps the frame's pointers
+  in a 1,024-entry table and a draw fades only when the modelview it loaded is
+  one of them.
+
+That last one is not belt and braces, it is the whole discrimination, and the
+sequel is what proved it: keyed on distance alone (plus the guard that all
+three of a triangle's vertices must be past the start of the band) the sequel
+faded 23,000 of 42,000 triangles a second to alpha 0, because its terrain is
+drawn in chunks with their own far-away origins and a distant chunk is
+arithmetically the same thing as a distant prop.  The vertex guard stays as a
+second line of defence.  The table is cleared once the frame's display list
+has been walked, because the matrices come out of a per-frame scratch
+allocator.
 
 Then the measurement, which is the part worth keeping.  `--fadedbg` prints the
 cull range, the band and how many draws fade:
@@ -563,11 +574,14 @@ cull range, the band and how many draws fade:
 * At `--drawdistance` 2 and 4 the cull box is 5,952 and 11,904 units, because
   `patches.txt` scales it along with the far plane, and **no course in this
   game reaches it**: `faded 0` for the whole race.
-* At `--drawdistance 1` it does bite, 30-450 triangles a second.  A
-  frame-exact pixel diff of the same retrace with the fade on and off is
-  **11 pixels**.  The reason is the same one the haze ran into: the game's own
-  fog is 83% thick at 2,976 units, so an object arriving there is already
-  nearly the colour of the air.
+* At `--drawdistance 1` it does bite -- 300-500 draws a second are inside the
+  band -- but the box is square in XZ while the frustum is not, so most of
+  those are beside or behind the camera.  Frame-exact diffs on the retraces
+  where one is actually on screen, approaching the JUMP banner on Rookie
+  Mountain, come out at **16, 11, 5, 1 and 0 pixels** over five consecutive
+  retraces.  The reason it is that small is the one the haze ran into: the
+  game's own fog is 83% thick at 2,976 units, so an object arriving there is
+  already nearly the colour of the air.
 
 So the honest description is that the first game does not have a visible
 pop-in at its cull boundary, and the option is kept because it is free, it is

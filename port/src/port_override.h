@@ -16,5 +16,8 @@ extern float sbk_haze_note_far(float f);
  * scaled by --drawdistance: the far-object fade-in needs the number the game
  * actually culls at (patches.txt).  Returns its argument. */
 extern int sbk_fadein_note_cull(int range);
+/* The matrix the game just built for an object the cull applies to; the
+ * far-object fade-in fades only draws that load one of these. */
+extern void sbk_fadein_note_object(const void *mtx);
 
 #endif

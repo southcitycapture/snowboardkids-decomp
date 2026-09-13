@@ -96,6 +96,7 @@ def main():
                 if not line.strip() or line.startswith("#"):
                     continue
                 path, old, new = line.rstrip("\n").split("\t")
+                new = new.replace("\\n", "\n")  # a patch may insert a line
                 if path != rel:
                     continue
                 if text.count(old) != 1:

@@ -17,3 +17,13 @@ src/engine/viewport_manager.c	        (f32)farClip,	        (f32)farClip * sbk_f
 # across: sbk_fadein_note_cull hands the port the number the game is really
 # culling at this run, and returns it unchanged.
 src/math/spatial_math.c	#define RACE_VIEWPORT_CAMERA_CULL_RANGE 0xBA00000	#define RACE_VIEWPORT_CAMERA_CULL_RANGE sbk_fadein_note_cull((s32)(0xBA00000 * sbk_far_scale))
+
+# Which matrices belong to an object the cull applies to (`fadein`).
+# allocFixedTransformMatrix is where the game builds a prop's, an effect's or
+# a projectile's transform -- the things isPositionNearCurrentRaceViewportCamera
+# decides about -- so the port is handed each pointer and fades only draws whose
+# modelview is one of them. Terrain and the sky never appear in the table,
+# which is what stops a distant chunk of course being faded like a distant prop
+# (the sequel's half of this measured 20,000 triangles a second going to alpha
+# 0 before the table existed). See port/src/gfx/haze.c.
+src/menu/renderer/menu_render_utils.c	    PACKED_MTX_WORD(dst, 15) = (source->translation.z << 16) & 0xFFFF0000;	    PACKED_MTX_WORD(dst, 15) = (source->translation.z << 16) & 0xFFFF0000;\n    { extern void sbk_fadein_note_object(const void *); sbk_fadein_note_object(dst); }

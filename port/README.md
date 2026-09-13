@@ -461,7 +461,8 @@ extent 0xBA00000 = 2976 units), so at the edge of it they appear from
 nothing. With `fadein` on they fade in across the last 14% of that range
 instead.
 
-The port needs two things at draw time and gets both without guessing:
+The port needs three things at draw time and gets all three from the game
+rather than guessing at any of them:
 
 * **The range.** `patches.txt` already scales the cull constant with
   `--drawdistance`; it now also passes it through `sbk_fadein_note_cull`,
@@ -473,9 +474,17 @@ The port needs two things at draw time and gets both without guessing:
   multiply per `G_MTX`, not per vertex, and it is the object's distance, so a
   prop fades as one thing rather than across its own depth.
 
-A terrain sheet running from under the camera out to the horizon can never be
-faded: a triangle only fades when *all three* of its vertices are past the
-start of the band as well.
+* **Which draws are objects at all.** Distance is not enough to tell a prop
+  from a piece of course -- the sequel proved that loudly, fading 23,000 of
+  42,000 triangles a second to nothing because its terrain is drawn in chunks
+  with their own far-away origins. So `patches.txt` has the game's own matrix
+  builder (`allocFixedTransformMatrix`, which is what props, effects and
+  projectiles get their transform from) hand each pointer to the port, and a
+  draw fades only when the modelview it loaded is one of them. Terrain, the
+  sky and the HUD never appear in that table.
+
+A triangle also only fades when *all three* of its vertices are past the start
+of the band, which is a second line of defence rather than the first.
 
 The draw itself fades in whichever way is honest for its blender: an opaque
 draw gets `glBlendColor` + `GL_CONSTANT_ALPHA` (the Radeon 9000 has
@@ -489,13 +498,21 @@ cutout instead of picking up square edges.
 nothing.** `--drawdistance` scales the cull range here, so at 2x and 4x the
 box is 5,952 and 11,904 units and no course ever reaches it -- `--fadedbg`
 reports `faded 0` for a whole race at 4x. At `--drawdistance 1` the box does
-bite (2,559..2,976), 30 to 450 triangles a second fade, and the difference it
-makes to a frame is **11 pixels**: the game's own fog is already 83% thick at
-that distance, so the objects arriving there are nearly the colour of the air
-before the fade touches them. It is kept in Enhanced because it is free
-(inside the noise of `--perf`) and correct by construction, and because the
-sequel's cull box, which `--drawdistance` does *not* scale, is where the same
-code has something real to do.
+bite (2,559..2,976) and 300 to 500 draws a second are inside the band -- but
+the box is square in XZ and the frustum is not, so nearly all of them are
+beside or behind the camera and never reach the screen.
+
+The five retraces where one *is* on screen are the measurement. Approaching
+the JUMP banner on Rookie Mountain, frame-exact diffs between the fade on and
+off run **16, 11, 5, 1 and 0 pixels** as the camera closes on it: the ramp
+working exactly as designed, and also the size of what it is fixing. The
+game's own fog is already 83% thick at that distance, so an object arriving
+there is nearly the colour of the air before the fade touches it. The sequel's cull box, which `--drawdistance` does *not* scale, is where the
+same code has more to do -- and the measurement there comes out at 11 to 18
+pixels for the same reason, with the haze doing the covering instead of the
+game's fog. So the option is kept in Enhanced because it costs nothing
+measurable and because an edge appearing out of nothing is worth not having,
+not because it changes what a race looks like.
 
 ### Widescreen (`widescreen=4:3|16:9`, `--widescreen=`)
 
