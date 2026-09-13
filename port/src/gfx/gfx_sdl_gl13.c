@@ -9,6 +9,8 @@
 #include "../settings.h"
 
 extern void sbk_input_request_quit(void);
+extern int sbk_ui_launcher_active;
+int sbk_ui_overlay_open(void);
 
 static SDL_Window *wnd;
 static SDL_GLContext ctx;
@@ -172,6 +174,14 @@ static void gfx_sdl_handle_events(void) {
                 }
                 break;
             case SDL_KEYDOWN:
+                /* Esc quits, the way Cmd+Q does -- but only from the game
+                 * itself: in the launcher and in the options overlay Esc is
+                 * already "back", and a key repeat must not quit either. */
+                if (ev.key.keysym.sym == SDLK_ESCAPE && ev.key.repeat == 0 &&
+                    !sbk_ui_launcher_active && !sbk_ui_overlay_open()) {
+                    sbk_input_request_quit();
+                    break;
+                }
                 /* fullscreen toggle: Cmd+Return, Cmd+F, Option+Return or F11 */
                 if ((ev.key.keysym.sym == SDLK_RETURN && (ev.key.keysym.mod & (KMOD_ALT | KMOD_GUI))) ||
                     (ev.key.keysym.sym == SDLK_f && (ev.key.keysym.mod & KMOD_GUI)) ||

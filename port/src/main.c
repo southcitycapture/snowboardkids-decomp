@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <unistd.h>
+#include <sys/wait.h>
 #include <SDL2/SDL.h>
 #include "ultra/sbk_os.h"
 #include "ultra/sbk_pins.h"
@@ -20,6 +22,10 @@
 #include "gfx/gfx_rendering_api.h"
 #include "settings.h"
 #include "ui/ui.h"
+
+extern char sbk_launch_target[1024];
+const char *sbk_settings_res_name(int v);
+const char *sbk_settings_filter_name(int v);
 
 extern void sbk_game_main(void *arg);
 extern int sbk_rom_load(const char *path);
@@ -193,6 +199,12 @@ int main(int argc, char **argv) {
             sbk_settings.widescreen = 1;
         } else if (strcmp(argv[i], "--nolauncher") == 0) {
             sbk_settings.launcher = 0;
+        } else if (strcmp(argv[i], "--start") == 0) {
+            /* skip the launcher and play -- WITHOUT going scripted, which is
+             * what --nolauncher does. This is how one bundle's launcher starts
+             * the other game: the settings file still counts, the flags below
+             * carry the mode the player chose. */
+            sbk_settings.launcher = 0;
         } else if (strcmp(argv[i], "--uiscript") == 0 && i + 1 < argc) {
             sbk_ui_script_set(argv[++i]);
         } else if (strcmp(argv[i], "--launcher") == 0) {
@@ -313,7 +325,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--start] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -344,10 +356,62 @@ int main(int argc, char **argv) {
     }
     sbk_audio_out_init();
 
+    sbk_games_probe(argc > 0 ? argv[0] : NULL);
+    {   /* a game remembered from a session where the other bundle existed */
+        const struct SbkGameEntry *e = sbk_game_at(sbk_game_index(sbk_settings.game));
+        if (e == NULL || !e->installed) {
+            strcpy(sbk_settings.game, sbk_game_at(sbk_game_self_index())->id);
+        }
+    }
+
     if (!sbk_launcher_run()) {
         printf("sbk: quit from the launcher\n");
         sbk_audio_out_shutdown();
         SDL_Quit();
+        return 0;
+    }
+
+    /* The launcher's other row: hand the session over to the sibling bundle.
+     * The window and the display mode go back first, then the chosen settings
+     * ride across on argv (each game keeps its own settings file, so the mode
+     * is passed rather than assumed). A plain fork+exec keeps the sibling's own
+     * bundle identity -- icon, name, menu bar -- which `exec` in place would
+     * not, and LaunchServices is not in the way on Leopard. */
+    if (sbk_launch_target[0] != '\0') {
+        char dd[32], vol[32], res[32], filt[32];
+        char *args[10];
+        int n = 0;
+        pid_t pid;
+        snprintf(dd, sizeof(dd), "--drawdistance");
+        snprintf(vol, sizeof(vol), "--volume=%d", sbk_settings.volume);
+        snprintf(res, sizeof(res), "--resolution=%s", sbk_settings_res_name(sbk_settings.resolution));
+        snprintf(filt, sizeof(filt), "--filter=%s", sbk_settings_filter_name(sbk_settings.filter));
+        {
+            static char ddn[8];
+            snprintf(ddn, sizeof(ddn), "%d", sbk_settings.draw_distance);
+            args[n++] = sbk_launch_target;
+            args[n++] = (char *)"--start";
+            args[n++] = dd;
+            args[n++] = ddn;
+            args[n++] = res;
+            args[n++] = filt;
+            args[n++] = vol;
+            args[n++] = sbk_settings.fullscreen ? (char *)"--fullscreen" : (char *)"--windowed";
+            args[n] = NULL;
+        }
+        sbk_input_play_shutdown();
+        sbk_audio_out_shutdown();
+        SDL_Quit();
+        pid = fork();
+        if (pid == 0) {
+            execv(sbk_launch_target, args);
+            _exit(127);
+        }
+        if (pid < 0) {
+            fprintf(stderr, "sbk: could not start %s\n", sbk_launch_target);
+            return 1;
+        }
+        printf("sbk: started %s (pid %d)\n", sbk_launch_target, (int)pid);
         return 0;
     }
 
@@ -420,7 +484,7 @@ int main(int argc, char **argv) {
         if (sbk_race_debug_enabled && retraces % 60 == 0) {
             sbk_race_debug(retraces);
         }
-        if (retraces % 120 == 0) {
+        if (retraces % 120 == 0 && (sbk_settings_scripted || sbk_perf_enabled)) {
             extern unsigned sbk_stat_cont, sbk_task_count, sbk_stat_present;
             printf("sbk: t=%lus retraces=%lu gfxtasks=%u presents=%u dma=%u contreads=%u swaps=%u audiopeak=%u\n",
                    retraces / 60, retraces, sbk_task_count, sbk_stat_present, sbk_stat_dma, sbk_stat_cont,

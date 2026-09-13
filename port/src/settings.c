@@ -12,9 +12,15 @@ int sbk_settings_loaded;
 
 /* --- the game list ------------------------------------------------------ */
 
+static const char *const sbk1_bundles[] = { "Snowboard Kids.app", "SnowboardKids.app", NULL };
+static const char *const sbk2_bundles[] = { "Snowboard Kids 2.app", "SnowboardKids2.app", NULL };
+
+/* `self` is the one this executable IS: it is always installed, and the other
+ * row lights up only when its bundle is found. The sequel's copy of this file
+ * differs in exactly these two flags. */
 static struct SbkGameEntry games[] = {
-    { "sbk1", "Snowboard Kids",   "snowboardkids.z64",  1 },
-    { "sbk2", "Snowboard Kids 2", "snowboardkids2.z64", 0 },
+    { "sbk1", "Snowboard Kids",   "snowboardkids.z64",  sbk1_bundles, 1, 1, { 0 } },
+    { "sbk2", "Snowboard Kids 2", "snowboardkids2.z64", sbk2_bundles, 0, 0, { 0 } },
 };
 
 int sbk_game_count(void) { return (int)(sizeof(games) / sizeof(games[0])); }
@@ -29,16 +35,63 @@ int sbk_game_index(const char *id) {
     }
     return 0;
 }
-/* A second game becomes selectable the moment its ROM turns up next to the
- * first one; the launcher needs no change for it. */
-void sbk_games_probe(const char *rom_dir) {
+int sbk_game_self_index(void) {
     int i;
-    char path[1024];
-    for (i = 1; i < sbk_game_count(); i++) {
-        FILE *f;
-        snprintf(path, sizeof(path), "%s/%s", rom_dir != NULL ? rom_dir : ".", games[i].rom);
-        f = fopen(path, "rb");
-        if (f != NULL) { fclose(f); games[i].installed = 1; }
+    for (i = 0; i < sbk_game_count(); i++) if (games[i].self) return i;
+    return 0;
+}
+
+/* --- finding the other bundle ------------------------------------------- */
+
+static int is_exec(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & 0111) != 0;
+}
+
+/* .../Foo.app/Contents/MacOS/isle -> .../ (the directory the bundle sits in).
+ * Returns 0 when argv0 does not look like it came out of a bundle. */
+static int bundle_parent(const char *argv0, char *out, size_t n) {
+    char buf[1024];
+    int i;
+    char *slash;
+    if (argv0 == NULL || argv0[0] == '\0') return 0;
+    snprintf(buf, sizeof(buf), "%s", argv0);
+    for (i = 0; i < 4; i++) {          /* isle, MacOS, Contents, Foo.app */
+        slash = strrchr(buf, '/');
+        if (slash == NULL) return 0;
+        *slash = '\0';
+    }
+    if (buf[0] == '\0') { snprintf(out, n, "/"); return 1; }
+    snprintf(out, n, "%s", buf);
+    return 1;
+}
+
+void sbk_games_probe(const char *argv0) {
+    const char *home = getenv("HOME");
+    char dirs[5][1024];
+    int ndirs = 0, i, d, b;
+
+    snprintf(dirs[ndirs++], sizeof(dirs[0]), "/Applications");
+    if (home != NULL) snprintf(dirs[ndirs++], sizeof(dirs[0]), "%s/Applications", home);
+    if (bundle_parent(argv0, dirs[ndirs], sizeof(dirs[0]))) ndirs++;
+    if (home != NULL) snprintf(dirs[ndirs++], sizeof(dirs[0]), "%s", home);
+
+    for (i = 0; i < sbk_game_count(); i++) {
+        if (games[i].self) { games[i].installed = 1; continue; }
+        games[i].installed = 0;
+        games[i].exe[0] = '\0';
+        for (d = 0; d < ndirs && !games[i].installed; d++) {
+            for (b = 0; games[i].bundles[b] != NULL; b++) {
+                char path[1024];
+                snprintf(path, sizeof(path), "%s/%s/Contents/MacOS/isle", dirs[d], games[i].bundles[b]);
+                if (is_exec(path)) {
+                    snprintf(games[i].exe, sizeof(games[i].exe), "%s", path);
+                    games[i].installed = 1;
+                    printf("sbk: %s found at %s/%s\n", games[i].title, dirs[d], games[i].bundles[b]);
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -88,9 +141,9 @@ void sbk_settings_defaults(void) {
 void sbk_settings_apply_mode(int mode) {
     sbk_settings.mode = mode;
     if (mode == SBK_MODE_ENHANCED) {
-        sbk_settings.draw_distance = 4;
+        sbk_settings.draw_distance = 2;
         sbk_settings.resolution = SBK_RES_NATIVE;
-        sbk_settings.filter = SBK_FILTER_SMOOTH;
+        sbk_settings.filter = SBK_FILTER_NONE;
         sbk_settings.widescreen = 0;
     } else if (mode == SBK_MODE_ORIGINAL) {
         sbk_settings.draw_distance = 1;
@@ -100,11 +153,25 @@ void sbk_settings_apply_mode(int mode) {
     }
 }
 
+/* What a player gets on a first run: the game as it looks best on the G4,
+ * filling the screen. sbk_settings_defaults() above is deliberately NOT this:
+ * a scripted run uses it and every golden replay was cut against those values,
+ * so it has to stay where it is. */
+void sbk_settings_player_defaults(void) {
+    sbk_settings_defaults();
+    sbk_settings_apply_mode(SBK_MODE_ENHANCED);
+    sbk_settings.fullscreen = 1;
+    sbk_settings.vsync = 1;
+    sbk_settings.volume = 100;
+    sbk_settings.launcher = 1;
+    sbk_settings.perf = 0;
+}
+
 /* Which mode the individual settings currently spell, so that changing one
  * knob on the Options page moves the Mode line to CUSTOM rather than lying. */
 int sbk_settings_derive_mode(void) {
-    if (sbk_settings.draw_distance == 4 && sbk_settings.resolution == SBK_RES_NATIVE &&
-        sbk_settings.filter == SBK_FILTER_SMOOTH && !sbk_settings.widescreen) return SBK_MODE_ENHANCED;
+    if (sbk_settings.draw_distance == 2 && sbk_settings.resolution == SBK_RES_NATIVE &&
+        sbk_settings.filter == SBK_FILTER_NONE && !sbk_settings.widescreen) return SBK_MODE_ENHANCED;
     if (sbk_settings.draw_distance == 1 && sbk_settings.resolution == SBK_RES_N64 &&
         sbk_settings.filter == SBK_FILTER_NONE && !sbk_settings.widescreen) return SBK_MODE_ORIGINAL;
     return SBK_MODE_CUSTOM;
@@ -134,7 +201,13 @@ void sbk_settings_load(void) {
     sbk_settings_defaults();
     if (sbk_settings_scripted) return;   /* determinism: goldens see the defaults */
     f = fopen(sbk_settings_path(), "r");
-    if (f == NULL) return;
+    if (f == NULL) {
+        /* first run: leave the player a file with the settings they got */
+        sbk_settings_player_defaults();
+        sbk_settings_save();
+        printf("sbk: wrote first-run settings to %s\n", sbk_settings_path());
+        return;
+    }
     while (fgets(line, sizeof(line), f) != NULL) {
         char *eq, *key, *val, *p;
         if (line[0] == '#' || line[0] == '\n') continue;

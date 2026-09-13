@@ -19,10 +19,17 @@ void sbk_gfx_swap(void);
 void sbk_gfx_set_fullscreen(int on);
 int sbk_gfx_is_fullscreen(void);
 int sbk_settings_derive_mode(void);
+void sbk_input_request_quit(void);
 const char *sbk_settings_mode_name(int v);
 const char *sbk_settings_res_name(int v);
 const char *sbk_settings_filter_name(int v);
-void sbk_games_probe(const char *rom_dir);
+
+/* Set when Start was pressed on the other game's row: main() hands the
+ * session over to that bundle once the launcher returns. */
+char sbk_launch_target[1024];
+/* 1 while the launcher owns the window: Esc means "back/quit here", not
+ * "quit the game" (which is what it does once a race is running). */
+int sbk_ui_launcher_active;
 
 /* --- list model ---------------------------------------------------------- */
 
@@ -59,6 +66,7 @@ static struct UiItem options_items[] = {
     { "Perf readout",  IT_TOGGLE, &sbk_settings.perf,          0, 1, 1, off_on,       0, -1 },
     { "",              IT_GAP,    NULL, 0, 0, 0, NULL, 0, -1 },
     { "Restore defaults", IT_ACTION, NULL, 0, 0, 0, NULL, ACT_DEFAULTS, -1 },
+    { "Quit game",     IT_ACTION, NULL, 0, 0, 0, NULL, ACT_QUIT, -1 },
     { "Back",          IT_ACTION, NULL, 0, 0, 0, NULL, ACT_BACK, -1 },
 };
 #define OPTIONS_N ((int)(sizeof(options_items) / sizeof(options_items[0])))
@@ -342,6 +350,7 @@ static void draw_launcher(int win_w, int win_h) {
 int sbk_launcher_run(void) {
     int quit = 0, start = 0;
     if (sbk_settings_scripted || !sbk_settings.launcher) return 1;
+    sbk_ui_launcher_active = 1;
     build_main_page();
     ui_fullscreen_shadow = sbk_gfx_is_fullscreen();
     memset(&nav, 0, sizeof(nav));
@@ -376,11 +385,19 @@ int sbk_launcher_run(void) {
                     break;
                 case IT_ACTION:
                     if (it->action == ACT_OPTIONS) { page = 1; nav.cursor = 0; clamp_cursor(&nav, options_items, OPTIONS_N); }
-                    else if (it->action == ACT_START) start = 1;
+                    else if (it->action == ACT_START) {
+                        int g = sbk_game_index(sbk_settings.game);
+                        const struct SbkGameEntry *e = sbk_game_at(g);
+                        if (e != NULL && !e->self && e->installed && e->exe[0] != '\0') {
+                            snprintf(sbk_launch_target, sizeof(sbk_launch_target), "%s", e->exe);
+                            printf("sbk: handing over to %s (%s)\n", e->title, e->exe);
+                        }
+                        start = 1;
+                    }
                     else if (it->action == ACT_QUIT) quit = 1;
                     else if (it->action == ACT_BACK) { page = 0; nav.cursor = 0; clamp_cursor(&nav, main_items, main_n); }
                     else if (it->action == ACT_DEFAULTS) {
-                        sbk_settings_defaults();
+                        sbk_settings_player_defaults();
                         ui_fullscreen_shadow = sbk_gfx_is_fullscreen();
                         sbk_settings.fullscreen = ui_fullscreen_shadow;
                         sbk_settings_apply();
@@ -401,6 +418,7 @@ int sbk_launcher_run(void) {
         sbk_gfx_swap();
         SDL_Delay(16);
     }
+    sbk_ui_launcher_active = 0;
     if (start) {
         sbk_settings_save();
         sbk_settings_apply();
@@ -443,8 +461,9 @@ int sbk_ui_overlay_tick(void) {
         struct UiItem *it = &options_items[nav.cursor];
         if (it->type == IT_ACTION) {
             if (it->action == ACT_BACK) { overlay_open = 0; sbk_settings_save(); }
+            else if (it->action == ACT_QUIT) { sbk_settings_save(); sbk_input_request_quit(); }
             else if (it->action == ACT_DEFAULTS) {
-                sbk_settings_defaults();
+                sbk_settings_player_defaults();
                 ui_fullscreen_shadow = sbk_gfx_is_fullscreen();
                 sbk_settings.fullscreen = ui_fullscreen_shadow;
                 sbk_settings_apply();

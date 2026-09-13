@@ -13,13 +13,17 @@ enum { SBK_MODE_ORIGINAL = 0, SBK_MODE_ENHANCED = 1, SBK_MODE_CUSTOM = 2 };
 enum { SBK_RES_NATIVE = 0, SBK_RES_N64 = 1, SBK_RES_2X = 2 };
 enum { SBK_FILTER_NONE = 0, SBK_FILTER_SCANLINES = 1, SBK_FILTER_GRILLE = 2, SBK_FILTER_SMOOTH = 3 };
 
-/* Registered games. Only sbk1 exists today; the table is what lets a second
- * executable/ROM be added later without touching the launcher. */
+/* Registered games: this port's own game plus its sibling. Either bundle is a
+ * front door -- the launcher lists both, and picking the other one hands the
+ * session over to that bundle's executable (see sbk_games_probe). */
 struct SbkGameEntry {
-    const char *id;        /* "sbk1" */
-    const char *title;     /* "Snowboard Kids" */
-    const char *rom;       /* ROM file name looked for next to the executable */
-    int installed;         /* 0 = shown greyed out with "not installed" */
+    const char *id;             /* "sbk1" */
+    const char *title;          /* "Snowboard Kids" */
+    const char *rom;            /* ROM file name inside the bundle's Resources */
+    const char *const *bundles; /* NULL-terminated .app names to look for */
+    int self;                   /* 1 = the game this executable is */
+    int installed;              /* 0 = shown greyed out with "not installed" */
+    char exe[1024];             /* Contents/MacOS/isle of the bundle we found */
 };
 
 struct SbkSettings {
@@ -61,5 +65,16 @@ void sbk_settings_apply_mode(int mode);
 int sbk_game_count(void);
 const struct SbkGameEntry *sbk_game_at(int i);
 int sbk_game_index(const char *id);
+int sbk_game_self_index(void);
+
+/* Look for the other game's bundle in /Applications, ~/Applications, next to
+ * this bundle and in the home directory; mark it installed and remember its
+ * executable. argv0 is this process's argv[0]. */
+void sbk_games_probe(const char *argv0);
+
+/* Sensible first-run settings for a player (Enhanced, fullscreen). Distinct
+ * from sbk_settings_defaults(), which is the port's own baseline and has to
+ * stay put: a scripted run uses it and golden replays are cut against it. */
+void sbk_settings_player_defaults(void);
 
 #endif
