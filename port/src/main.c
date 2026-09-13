@@ -160,6 +160,7 @@ int main(int argc, char **argv) {
     sbk_settings_load();
     int fullscreen = 0; /* 1 = yes, -1 = --windowed, 0 = default (fullscreen when SBK_FULLSCREEN=1 or launched from the Finder) */
     extern int sbk_wide_output;
+    extern int sbk_fadein_enabled;
     const char *pak_path = NULL;
     int nopak = 0;
     const char *play = NULL, *record = NULL;
@@ -178,6 +179,7 @@ int main(int argc, char **argv) {
         if (sbk_settings.fullscreen) fullscreen = 1;
         sbk_perf_enabled = sbk_settings.perf;
         sbk_haze_enabled = sbk_settings.haze;
+        sbk_fadein_enabled = sbk_settings.fadein;
     }
 
     for (i = 1; i < argc; i++) {
@@ -198,8 +200,36 @@ int main(int argc, char **argv) {
             fullscreen = -1;
             sbk_settings.fullscreen = 0;
         } else if (strcmp(argv[i], "--wide") == 0) {
-            sbk_wide_output = 1;
-            sbk_settings.widescreen = 1;
+            sbk_wide_output = SBK_WIDE_16_9;
+            sbk_settings.widescreen = SBK_WIDE_16_9;
+        } else if (strncmp(argv[i], "--widescreen=", 13) == 0) {
+            const char *v = argv[i] + 13;
+            sbk_settings.widescreen = (strcmp(v, "16:9") == 0 || strcmp(v, "1") == 0) ? SBK_WIDE_16_9 : SBK_WIDE_4_3;
+            sbk_wide_output = sbk_settings.widescreen;
+            sbk_settings_forced = 1;
+        } else if (strcmp(argv[i], "--fadein") == 0 || strncmp(argv[i], "--fadein=", 9) == 0) {
+            sbk_settings.fadein = argv[i][8] == '=' ? atoi(argv[i] + 9) != 0 : 1;
+            sbk_fadein_enabled = sbk_settings.fadein;
+            sbk_settings_forced = 1;
+        } else if (strcmp(argv[i], "--nofadein") == 0) {
+            sbk_settings.fadein = 0;
+            sbk_fadein_enabled = 0;
+            sbk_settings_forced = 1;
+        } else if (strcmp(argv[i], "--fadedbg") == 0) {
+            extern int sbk_fadein_debug;
+            sbk_fadein_debug = 1;
+        } else if (strncmp(argv[i], "--msaa=", 7) == 0) {
+            int n = atoi(argv[i] + 7);
+            sbk_settings.msaa = n >= 4 ? 4 : (n >= 2 ? 2 : 0);
+            sbk_settings_forced = 1;
+        } else if (strncmp(argv[i], "--texfilter=", 12) == 0) {
+            const char *v = argv[i] + 12;
+            sbk_settings.texfilter = strcmp(v, "point") == 0 ? SBK_TEXFILTER_POINT :
+                                     strcmp(v, "bilinear") == 0 ? SBK_TEXFILTER_BILINEAR : SBK_TEXFILTER_RDP;
+            sbk_settings_forced = 1;
+        } else if (strcmp(argv[i], "--glinfo") == 0) {
+            extern int sbk_glinfo;
+            sbk_glinfo = 1;
         } else if (strcmp(argv[i], "--nolauncher") == 0) {
             sbk_settings.launcher = 0;
         } else if (strcmp(argv[i], "--start") == 0) {
@@ -337,7 +367,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--start] [--haze[=0|1]] [--hazedbg] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide|--widescreen=4:3|16:9] [--fadein[=0|1]] [--msaa=0|2|4] [--texfilter=rdp|point|bilinear] [--start] [--haze[=0|1]] [--hazedbg] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -390,14 +420,17 @@ int main(int argc, char **argv) {
      * bundle identity -- icon, name, menu bar -- which `exec` in place would
      * not, and LaunchServices is not in the way on Leopard. */
     if (sbk_launch_target[0] != '\0') {
-        char dd[32], vol[32], res[32], filt[32];
-        char *args[12];
+        char dd[32], vol[32], res[32], filt[32], wide[32], msaa[32], texf[32];
+        char *args[20];
         int n = 0;
         pid_t pid;
         snprintf(dd, sizeof(dd), "--drawdistance");
         snprintf(vol, sizeof(vol), "--volume=%d", sbk_settings.volume);
         snprintf(res, sizeof(res), "--resolution=%s", sbk_settings_res_name(sbk_settings.resolution));
         snprintf(filt, sizeof(filt), "--filter=%s", sbk_settings_filter_name(sbk_settings.filter));
+        snprintf(wide, sizeof(wide), "--widescreen=%s", sbk_settings_wide_name(sbk_settings.widescreen));
+        snprintf(msaa, sizeof(msaa), "--msaa=%d", sbk_settings.msaa);
+        snprintf(texf, sizeof(texf), "--texfilter=%s", sbk_settings_texfilter_name(sbk_settings.texfilter));
         {
             static char ddn[8];
             snprintf(ddn, sizeof(ddn), "%d", sbk_settings.draw_distance);
@@ -409,6 +442,10 @@ int main(int argc, char **argv) {
             args[n++] = filt;
             args[n++] = vol;
             args[n++] = sbk_settings.haze ? (char *)"--haze=1" : (char *)"--haze=0";
+            args[n++] = sbk_settings.fadein ? (char *)"--fadein=1" : (char *)"--fadein=0";
+            args[n++] = wide;
+            args[n++] = msaa;
+            args[n++] = texf;
             args[n++] = sbk_settings.fullscreen ? (char *)"--fullscreen" : (char *)"--windowed";
             args[n] = NULL;
         }

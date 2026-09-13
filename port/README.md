@@ -49,6 +49,8 @@ end on the same frame hash (`--frames N --hashframe`).
 
     snowboardkids [--fullscreen] [--nolauncher] [--mode=original|enhanced]
                   [--resolution=native|n64|2x] [--filter=none|scanlines|grille|smooth]
+                  [--widescreen=4:3|16:9] [--fadein[=0|1]] [--msaa=0|2|4]
+                  [--texfilter=rdp|point|bilinear] [--glinfo]
                   [--volume=0..100] [--uiscript SEQ]
                   [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64]
                   [--frames N] [--hashframe] [--mute] [--noaudio] [--wav OUT.wav]
@@ -73,9 +75,14 @@ Controller Pak) is a plain `key=value` file:
     game=sbk1          mode=original|enhanced|custom
     draw_distance=1..4 resolution=native|n64|2x
     filter=none|scanlines|grille|smooth
-    widescreen=0|1     fullscreen=0|1     vsync=0|1
+    texfilter=rdp|point|bilinear          msaa=0|2|4
+    widescreen=4:3|16:9                   fadein=0|1
+    fullscreen=0|1     vsync=0|1
     volume=0..100      launcher=0|1       perf=0|1
     haze=0|1
+
+`widescreen` used to be `0|1` and both spellings still read; everything else
+is new with the four rendering options below.
 
 It is read before the command line is parsed, so **every flag still wins for
 its own run**: `--drawdistance`, `--wide`, `--windowed`, `--perf`, `--haze[=0|1]` and the
@@ -91,8 +98,13 @@ page with the individual settings, **Start** and **Quit**. Arrows or the
 stick move, Enter or A selects, left/right change a value, Esc or B backs out
 and quits from the top page.
 
-* **Original** = draw distance 1, `n64` resolution, no filter, 4:3, no haze.
-* **Enhanced** = draw distance 2, `native` resolution, no filter, 4:3, **haze on**.
+* **Original** = draw distance 1, `n64` resolution, no filter, no haze, no
+  fade-in, no anti-aliasing, `texfilter=rdp`, 4:3.
+* **Enhanced** = draw distance 2, `native` resolution, no filter, **haze on**,
+  **fade-in on**, **2x anti-aliasing**, `texfilter=rdp`.
+* **Widescreen is in neither preset.** It is a framing choice for the screen
+  the player owns, not a quality dial, so changing it does not turn ENHANCED
+  into CUSTOM.
 * Touching any single setting moves Mode to **CUSTOM** rather than lying.
 
 **The overlay** is the same Options page over the running game: **F1** or the
@@ -100,8 +112,10 @@ pad's **View** button opens and closes it (View no longer doubles as Start).
 It is drawn over the left letterbox bar where one is wide enough and
 translucently over the frame otherwise; the game keeps running underneath
 with its controller reading as idle, and draw distance, resolution, filter,
-widescreen, vsync, volume, the distance haze and the perf readout all apply
-live.
+texture filter, the far-object fade-in, widescreen, vsync, volume, the
+distance haze and the perf readout all apply live. **Anti-aliasing** is the
+one row that does not: a multisample count is a pixel-format attribute, so it
+is written to the file and taken at the next start.
 
 **Resolution modes** render the frame into a 320x240 (`n64`) or 640x480
 (`2x`) viewport, copy it into a power-of-two texture with
@@ -430,12 +444,180 @@ perspNorm the race camera carried against every other perspNorm in the frame,
 how many triangles were tinted and the farthest vertex seen. Scripted and
 golden runs force it off, like the filters.
 
+## The four Enhanced rendering options
+
+Added 2026-09-13, next to the draw distance and the haze: each has a
+`settings.txt` key, a flag, a row in the launcher's Options page and the same
+row in the in-game overlay; each is off in **Original**, forced off in a
+scripted or golden run, and passed across when one bundle's launcher starts
+the other game.
+
+### Far-object fade-in (`fadein`, `--fadein[=0|1]`)
+
+Props, riders, item panels and effects are drawn only while they are inside
+the game's own camera-distance cull box
+(`isPositionNearCurrentRaceViewportCamera`, `src/math/spatial_math.c`, half
+extent 0xBA00000 = 2976 units), so at the edge of it they appear from
+nothing. With `fadein` on they fade in across the last 14% of that range
+instead.
+
+The port needs two things at draw time and gets both without guessing:
+
+* **The range.** `patches.txt` already scales the cull constant with
+  `--drawdistance`; it now also passes it through `sbk_fadein_note_cull`,
+  which keeps the number and returns it, so the game's own expression is
+  unchanged and the port knows the distance this run really culls at.
+* **The object's distance.** The game loads each object's own matrix into
+  `G_MTX_MODELVIEW`, so the origin's clip-space *w* is `MP[3][3]` and the
+  same w-column scale the haze uses turns it into world units. That is one
+  multiply per `G_MTX`, not per vertex, and it is the object's distance, so a
+  prop fades as one thing rather than across its own depth.
+
+A terrain sheet running from under the camera out to the horizon can never be
+faded: a triangle only fades when *all three* of its vertices are past the
+start of the band as well.
+
+The draw itself fades in whichever way is honest for its blender: an opaque
+draw gets `glBlendColor` + `GL_CONSTANT_ALPHA` (the Radeon 9000 has
+`GL_ARB_imaging` and `GL_EXT_blend_color`), which needs nothing from the
+combiner and so works for every one of the game's chains; a draw that is
+already alpha-blended keeps its own `GL_SRC_ALPHA` blend and is faded by
+scaling the alpha gfx_pc bakes into its vertex stream, so a sprite keeps its
+cutout instead of picking up square edges.
+
+**What it is worth in this game, measured rather than assumed: almost
+nothing.** `--drawdistance` scales the cull range here, so at 2x and 4x the
+box is 5,952 and 11,904 units and no course ever reaches it -- `--fadedbg`
+reports `faded 0` for a whole race at 4x. At `--drawdistance 1` the box does
+bite (2,559..2,976), 30 to 450 triangles a second fade, and the difference it
+makes to a frame is **11 pixels**: the game's own fog is already 83% thick at
+that distance, so the objects arriving there are nearly the colour of the air
+before the fade touches them. It is kept in Enhanced because it is free
+(inside the noise of `--perf`) and correct by construction, and because the
+sequel's cull box, which `--drawdistance` does *not* scale, is where the same
+code has something real to do.
+
+### Widescreen (`widescreen=4:3|16:9`, `--widescreen=`)
+
+<p align="center">
+  <img src="docs/screenshots/race-widescreen.png" width="49%" alt="A race in 16:9">
+  <img src="docs/screenshots/menu-widescreen.png" width="49%" alt="A menu in 16:9: still a centred 4:3 box">
+</p>
+
+16:9 is not a stretch and not a crop. The output rectangle becomes 16:9
+(letterboxed in the window or on the screen), and gfx_pc's existing aspect
+correction then maps the game's 4:3 frustum onto the middle three quarters of
+it -- so the vertical field of view is untouched, nothing is distorted, and
+what appears at the sides is scenery the race camera's own projection was
+already drawing and the 4:3 frame was cutting off.
+
+Every 2D task goes through the same correction, so the HUD, the menus and the
+S2DEX/ortho passes stay a centred 4:3 box. What 2D cannot do on its own is
+stop the *3D* passes of a menu screen from showing the sides of a backdrop
+built for a 4:3 frame, so a frame that is not a race is scissored back to its
+centred 4:3 box.
+
+That decision is made **per frame and not per draw**, and the first attempt
+got it wrong in a way worth writing down: keyed on the projection of each
+draw, the sky, the HUD and the item overlays -- which hang off their own
+viewports -- were clamped inside a race, and the race came out with black
+wedges in the top corners where the sky should have been. A draw under the
+race camera's projection now only records the fact, and the next frame uses
+it; the one frame of lag at the start of a race is behind the game's own
+fade-in.
+
+The cull is radial-ish (a square box in XZ around the camera) so the wider
+edges need nothing: an object entering from the side was never culled for
+being to the side. The `n64` and `2x` resolution modes follow the aspect --
+427x240 and 854x480, both still inside the 512 and 1024 power-of-two copy
+textures the present pass uses.
+
+### Anti-aliasing (`msaa=0|2|4`, `--msaa=`)
+
+<p align="center">
+  <img src="docs/screenshots/aa-off.png" width="49%" alt="Edges with anti-aliasing off">
+  <img src="docs/screenshots/aa-4x.png" width="49%" alt="The same edges at 4x">
+</p>
+
+**The Radeon 9000 does have multisample pixel formats**, which was not a
+given: `GL_ARB_multisample` is in the extension list, `SDL_GL_MULTISAMPLE-
+BUFFERS`/`SAMPLES` are honoured, and the created context comes back with
+`GL_SAMPLE_BUFFERS 1`, `GL_SAMPLES 4`. The port asks for the samples before
+`SDL_CreateWindow` and reports what it actually got --
+
+    sbk: multisample: asked 4, SDL buffers 1 samples 4
+    gfx_gl13: multisample buffers 1 samples 4 -> anti-aliasing ON
+
+-- and if the driver has no format of that size the window creation fails
+outright rather than quietly downgrading, so the port retries once without it
+and says so. A sample count is a pixel-format attribute, so the row writes
+the setting and the **next start** picks it up; changing it live would mean
+destroying the GL context under a running game.
+
+It composes with the resolution modes: `glCopyTexSubImage2D` resolves the
+multisampled buffer as it copies, so `n64` and `2x` are multisampled at their
+own render size and then scaled.
+
+### Texture filtering (`texfilter=rdp|point|bilinear`, `--texfilter=`)
+
+<p align="center">
+  <img src="docs/screenshots/texfilter-rdp.png" width="49%" alt="As the RDP asks: bilinear">
+  <img src="docs/screenshots/texfilter-point.png" width="49%" alt="Point sampling">
+</p>
+
+`rdp` (the default) is what the console did: each tile is sampled the way the
+game's own `G_SETOTHERMODE_H` asked, point or bilinear. `point` and
+`bilinear` force one for every tile -- point brings back the N64-ish crunch on
+the snow and the signs, bilinear smooths the handful of tiles the game asks
+for point on. The setting is applied in both places the filter shows: the GL
+sampler, and the half-texel offset bilinear sampling needs.
+
+**There is deliberately no `n64` three-point mode, because it cannot be done
+honestly on this card.** The RDP samples three texels of the texel quad and
+weights them by which half of the cell the pixel is in. Without fragment
+programs the only fixed-function route is: three texture units sampling the
+same texture at one-texel offsets (a texture matrix each), a fourth unit
+holding a weight texture indexed by the *fractional* texel coordinate (which
+`GL_REPEAT` and a scaled texture coordinate do give you), and then
+`T0*w.r + T1*w.g + T2*w.b`. The last step is what kills it: a texture
+environment stage multiplies by a whole RGB vector, there is no channel
+swizzle, so the three weights cannot be applied to the three samples. The
+card does expose `GL_ATI_text_fragment_shader`, and with it the arithmetic
+would be expressible -- but that would mean re-implementing the N64 colour
+combiner in that shader language for every combiner the game uses, which is a
+different renderer, not a filter. So the port ships the two filters it can do
+truthfully and says why the third is missing.
+
+### What they cost on the G4
+
+One measured race each -- the course-9 golden movie replayed at real time with
+`--perf`, Enhanced (`--drawdistance 2`), 640x480 windowed -- averaged over the
+same stretch of retraces (9,200-11,100) in every run, so the same scenery is
+being compared:
+
+| run | gfx ms | GL ms | CPU | Hz | tris/frame |
+| --- | --- | --- | --- | --- | --- |
+| Enhanced, all four off | 2.44 | 0.39 | 35% | 60.0 | 297 |
+| + fade-in | 2.48 | 0.39 | 36% | 60.0 | 305 |
+| + anti-aliasing 2x | 2.47 | 0.39 | 35% | 60.0 | 304 |
+| + anti-aliasing 4x | 2.48 | 0.38 | 35% | 60.0 | 302 |
+| + `texfilter=point` | 2.46 | 0.38 | 35% | 60.0 | 302 |
+| + widescreen 16:9 | 2.81 | 0.41 | 38% | 60.0 | 369 |
+
+Three of the four are inside the noise. **Anti-aliasing is free on this
+machine's clock**, which is the right answer rather than a surprising one: the
+multisampling happens in the Radeon, and the port's own work per frame does
+not change. Widescreen costs what it says it costs: a wider field of view is
+a quarter more triangles, and 0.37 ms more of display-list work to build them.
+Every run held 60.0 Hz with two thirds of the frame idle.
+
 ## Fullscreen
 
 `--fullscreen` switches the display to its desktop mode and draws the N64
 frame as a 4:3 box in the middle (`--fullscreen=1024x768` picks another
-mode, `--fullscreen-desktop` uses a borderless window instead, `--wide`
-fills the width sm64-port style). Launching the app from the Finder starts
+mode, `--fullscreen-desktop` uses a borderless window instead, `--wide` is
+`--widescreen=16:9` and draws a 16:9 box instead -- see the widescreen option
+above). Launching the app from the Finder starts
 fullscreen (`SBK_FULLSCREEN=1` does the same from a shell); `--windowed` keeps
 the 640x480 window. Cmd+Return, Cmd+F, Option+Return or F11 toggle at runtime.
 

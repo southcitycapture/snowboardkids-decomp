@@ -61,6 +61,10 @@ static struct ShaderProgram *cur_prg;
 static GLuint dummy_tex;
 static GLuint tex_bound[2];
 static bool have_combine3;
+static bool have_blend_color;   /* glBlendColor + GL_CONSTANT_ALPHA */
+static int gl_samples;          /* GL_SAMPLES of the real framebuffer */
+extern int sbk_glinfo;
+int gfx_gl13_samples(void) { return gl_samples; }
 static bool cur_use_alpha;
 static bool cur_texture_edge;
 static int warn_count;
@@ -474,6 +478,32 @@ void gfx_gl13_set_output_rect(int x, int y, int w, int h, int win_w, int win_h) 
     out_x = x; out_y = y; out_w = w; out_h = h; out_win_w = win_w; out_win_h = win_h;
 }
 
+/* --- widescreen ----------------------------------------------------------
+ * 16:9 is not a stretch and not a crop: the output rectangle and the render
+ * target get wider, and gfx_pc's aspect correction then maps the game's 4:3
+ * frustum onto the middle 75% of it, so the race camera's own projection
+ * shows what stands at the sides.  Every 2D task goes through the same
+ * correction and therefore stays a centred 4:3 box.
+ *
+ * What 2D cannot do on its own is stop the *3D* passes of a menu screen from
+ * revealing the sides of a backdrop that was built for a 4:3 frame.  So on a
+ * frame that is not a race, the viewport and scissor are clamped back to the
+ * centred 4:3 box and the rest of the window is the black it was cleared to. */
+static int wide_mode;
+/* gfx_pc sets this per draw from the projection that is loaded: 1 while the
+ * race camera's own projection is current, 0 for every other pass.  It is a
+ * per-draw answer and not a per-frame one because the first game's race and
+ * menu tasks can both be live in the same frame. */
+int sbk_wide_draw_full;
+
+static void gfx_gl13_apply_render_scale(void);
+
+void gfx_gl13_set_widescreen(int wide) {
+    if (wide_mode == (wide != 0)) return;
+    wide_mode = wide != 0;
+    gfx_gl13_apply_render_scale();   /* the n64 / 2x targets change shape too */
+}
+
 /* --- resolution modes and filters (settings.c drives these) ------------- */
 /* Filled in below; the render size is 0 in `native` mode, where gfx_pc draws
  * straight into the output rectangle. */
@@ -483,15 +513,32 @@ static int filter_mode;
 int gfx_gl13_render_width(void) { return render_w; }
 int gfx_gl13_render_height(void) { return render_h; }
 
-void gfx_gl13_set_render_scale(int mode) {
+/* The n64 / 2x render targets keep the output rectangle's aspect: 427x240 and
+ * 854x480 under widescreen, which are still inside the 512 and 1024 power-of-
+ * two copy textures the present pass uses. */
+static int render_mode_wanted;
+
+static void gfx_gl13_apply_render_scale(void) {
     int w = 0, h = 0;
-    if (mode == 1) { w = 320; h = 240; }
-    else if (mode == 2) { w = 640; h = 480; }
-    if (w == render_w) return;
+    if (render_mode_wanted == 1) { h = 240; w = wide_mode ? 427 : 320; }
+    else if (render_mode_wanted == 2) { h = 480; w = wide_mode ? 854 : 640; }
+    if (w == render_w && h == render_h) return;
     render_w = w; render_h = h;
 }
 
+void gfx_gl13_set_render_scale(int mode) {
+    render_mode_wanted = mode;
+    gfx_gl13_apply_render_scale();
+}
+
 void gfx_gl13_set_filter(int filter) { filter_mode = filter; }
+
+/* settings.txt `texfilter`: 0 = whatever the RDP asked for (the default and
+ * what the console did), 1 = point for every tile, 2 = bilinear for every
+ * tile.  gfx_pc reads it -- the choice has to be made where the +0.5 texel
+ * bilinear offset is applied as well as where the sampler is set. */
+int sbk_texfilter_mode;
+void gfx_gl13_set_texfilter(int mode) { sbk_texfilter_mode = mode; }
 
 /* ---- the present-time post pass ----------------------------------------
  * The N64 frame is drawn into the bottom-left render_w x render_h of the
@@ -633,19 +680,75 @@ static void post_present(void) {
     post_end();
 }
 
+/* Under widescreen, a frame that is not a race is confined to the centred 4:3
+ * box of the (wider) frame, so a menu's 3D backdrop is not asked for scenery
+ * its author never drew.  The 2D itself is already centred and correctly
+ * proportioned by gfx_pc's aspect correction; this only cuts what lies
+ * outside it. */
+static void wide_clamp(int *x, int *width) {
+    int full = render_w > 0 ? render_w : out_w;
+    int box, left, l, r;
+    if (!wide_mode || sbk_wide_draw_full || full <= 0) return;
+    box = (render_w > 0 ? render_h : out_h) * 4 / 3;   /* 4:3 at this height */
+    if (box >= full) return;
+    left = (full - box) / 2;
+    l = *x < left ? left : *x;
+    r = *x + *width > left + box ? left + box : *x + *width;
+    if (r < l) r = l;
+    *x = l;
+    *width = r - l;
+}
+
 static void gl13_set_viewport(int x, int y, int width, int height) {
     if (render_w > 0) { glViewport(x, y, width, height); return; }
     glViewport(x + out_x, y + out_y, width, height);
 }
 
 static void gl13_set_scissor(int x, int y, int width, int height) {
+    wide_clamp(&x, &width);
     if (render_w > 0) { glScissor(x, y, width, height); return; }
     glScissor(x + out_x, y + out_y, width, height);
 }
 
+/* --- far-object fade-in --------------------------------------------------
+ * gfx/haze.c decides that an object is inside the last stretch of the game's
+ * own camera-distance cull range and hands the batch a factor; the draw is
+ * then blended against what is already in the framebuffer.
+ *
+ * An opaque draw blends with a constant alpha (GL_EXT_blend_color / the
+ * imaging subset), which needs nothing from the combiner and therefore works
+ * for every one of the game's combiner chains.  A draw that is *already*
+ * alpha-blended keeps its own GL_SRC_ALPHA blend -- switching it to a
+ * constant would throw away the texture's cutout and give a sprite square
+ * edges -- and is faded in gfx_pc instead, by scaling the alpha inputs it
+ * bakes into the vertex stream. */
+static float cur_fade = 1.0f;
+
+static void apply_blend(void) {
+    if (cur_fade >= 0.999f || !have_blend_color || cur_use_alpha) {
+        if (cur_use_alpha) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+            glDisable(GL_BLEND);
+        }
+        return;
+    }
+    glEnable(GL_BLEND);
+    glBlendColor(0.0f, 0.0f, 0.0f, cur_fade);
+    glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
+}
+
+void gfx_gl13_set_fade(float f) {
+    cur_fade = f;
+    apply_blend();
+}
+
+int gfx_gl13_can_fade_opaque(void) { return have_blend_color ? 1 : 0; }
+
 static void gl13_set_use_alpha(bool use_alpha) {
     cur_use_alpha = use_alpha;
-    if (use_alpha) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    apply_blend();
 }
 
 /* Set every unit's GL_CONSTANT from the vertex at `v`. */
@@ -747,7 +850,26 @@ static void gl13_init(void) {
     const char *ext = (const char *)glGetString(GL_EXTENSIONS);
     static const uint8_t white[4] = { 255, 255, 255, 255 };
     have_combine3 = ext != NULL && strstr(ext, "GL_ATI_texture_env_combine3") != NULL;
+    have_blend_color = ext != NULL && (strstr(ext, "GL_ARB_imaging") != NULL ||
+                                       strstr(ext, "GL_EXT_blend_color") != NULL);
     printf("gfx_gl13: %s / %s (combine3 %s)\n", glGetString(GL_RENDERER), glGetString(GL_VERSION), have_combine3 ? "yes" : "NO");
+    {
+        /* What the framebuffer really has, which is the only honest answer to
+         * "is anti-aliasing on": SDL reports the attribute it asked for. */
+        GLint bufs = 0, smp = 0;
+        glGetIntegerv(GL_SAMPLE_BUFFERS, &bufs);
+        glGetIntegerv(GL_SAMPLES, &smp);
+        gl_samples = (bufs > 0) ? (int)smp : 0;
+        printf("gfx_gl13: multisample buffers %d samples %d -> anti-aliasing %s; blend colour %s\n",
+               (int)bufs, (int)smp, gl_samples > 1 ? "ON" : "off", have_blend_color ? "yes" : "NO");
+        if (gl_samples > 1) {
+            glEnable(GL_MULTISAMPLE);
+        }
+    }
+    if (sbk_glinfo) {
+        printf("gfx_gl13: vendor %s\n", glGetString(GL_VENDOR));
+        printf("gfx_gl13: extensions: %s\n", ext != NULL ? ext : "(none)");
+    }
 
     glGenTextures(1, &dummy_tex);
     glBindTexture(GL_TEXTURE_2D, dummy_tex);
@@ -780,7 +902,7 @@ static void gl13_on_resize(void) {
 
 static void gl13_start_frame(void) {
     /* letterbox: paint the whole window black, then confine drawing to the output rectangle */
-    if (out_x != 0 || out_y != 0) {
+    if (out_x != 0 || out_y != 0 || wide_mode) {
         glDisable(GL_SCISSOR_TEST);
         glViewport(0, 0, out_win_w, out_win_h);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

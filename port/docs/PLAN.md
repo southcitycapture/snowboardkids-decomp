@@ -506,3 +506,155 @@ a frame, whose colour is the per-course `gFadeColorRed/Green/Blue` that
 is the one course with a real fog of its own (white, a 950 start and a 1000
 far plane) and it is also the one course `--drawdistance` does not touch, so
 the haze's perspNorm test leaves it alone by construction.
+
+## The four Enhanced rendering options, 2026-09-13
+
+Four options next to `--drawdistance` and the haze, on the same terms: a
+`settings.txt` key, a flag, a launcher row and the same row in the overlay,
+off in Original, forced off in a scripted or golden run, passed across the
+cross-launch.  `port/README.md` is the user-facing description; what follows
+is what had to be measured, and what the card turned out to allow.
+
+### What the Radeon 9000 actually offers (`--glinfo`)
+
+The extension list was worth printing before designing anything:
+
+    ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28
+    GL_ARB_multisample  GL_ARB_imaging  GL_EXT_blend_color
+    GL_ARB_texture_env_combine  GL_ATI_texture_env_combine3  crossbar
+    GL_ARB_vertex_program  GL_ATI_text_fragment_shader
+    (no ARB_fragment_program, no FBO, no NPOT)
+
+Two of those decided two of the options.  `GL_ARB_multisample` means
+anti-aliasing is real and not an approximation.  `GL_ARB_imaging` /
+`GL_EXT_blend_color` mean a draw can be faded with a constant alpha without
+the combiner knowing anything about it, which is what makes the far-object
+fade-in work for every one of the game's combiner chains rather than the
+subset that happens to multiply by shade alpha.
+
+`GL_ATI_text_fragment_shader` is the one surprise: the card is not quite
+"fixed function only".  It is not usable here, though -- see the three-point
+filter below.
+
+### Far-object fade-in: correct, and measurably almost inert in this game
+
+The mechanism is in `port/src/gfx/haze.c` next to the haze, because it needs
+the same two answers: which projection is the race camera's, and how to turn
+a clip-space *w* into world units.  Two things are new:
+
+* `sbk_fadein_note_cull()` in `patches.txt`, wrapping the cull constant the
+  way `sbk_haze_note_far` wraps the far plane.  The port never keeps a copy of
+  a game constant it can be handed.
+* `rsp.obj_dist = MP[3][3] * w_to_dist` in `gfx_sp_matrix`: the object's own
+  origin, once per `G_MTX`.  A prop then fades as one object instead of
+  across its own depth, which is what a per-vertex ramp would have done.
+
+The guard that matters: a triangle only fades if all three of its vertices are
+also past the start of the band.  Without it, one sheet of terrain running
+from under the camera to the horizon is a single object at a far origin, and
+fading it would punch a hole in the course.
+
+Then the measurement, which is the part worth keeping.  `--fadedbg` prints the
+cull range, the band and how many draws fade:
+
+    sbk-fade: r9960 cull 2976 fade 2559..2976 draws 11820 faded 448 minalpha 0.41
+    sbk-fade: r10020 cull 11904 fade 10237..11904 draws 24539 faded 0 minalpha 1.00
+
+* At `--drawdistance` 2 and 4 the cull box is 5,952 and 11,904 units, because
+  `patches.txt` scales it along with the far plane, and **no course in this
+  game reaches it**: `faded 0` for the whole race.
+* At `--drawdistance 1` it does bite, 30-450 triangles a second.  A
+  frame-exact pixel diff of the same retrace with the fade on and off is
+  **11 pixels**.  The reason is the same one the haze ran into: the game's own
+  fog is 83% thick at 2,976 units, so an object arriving there is already
+  nearly the colour of the air.
+
+So the honest description is that the first game does not have a visible
+pop-in at its cull boundary, and the option is kept because it is free, it is
+correct, and the *sequel's* cull box is a cube of 4,074 units that
+`--drawdistance` does not scale at all -- which is where the same code has
+something to do.
+
+### Widescreen: the aspect correction was already most of the answer
+
+`gfx_adjust_x_for_aspect_ratio` multiplies every x by `(4/3) / render_aspect`,
+for 2D and 3D alike.  Give it a 16:9 render target and it does exactly the
+right thing on its own: the 4:3 frustum lands on the middle three quarters of
+the frame (nothing stretched, vertical FOV untouched) and the wider viewport
+is filled by geometry the race camera's own projection was already producing
+and the 4:3 frame was cutting off.  2D passes go through the same correction
+and therefore stay a centred 4:3 box, which is what the HUD and the menus
+want.
+
+So the port-side work was three small things: an aspect for the output
+rectangle in `gfx_sdl_gl13.c`, render sizes that follow it (427x240 and
+854x480, still inside the 512/1024 copy textures), and a scissor clamp that
+keeps a *non-race* frame inside its 4:3 box so a menu's 3D backdrop is not
+asked for scenery nobody drew.
+
+**The clamp has to be decided per frame, not per draw.**  Keyed on each draw's
+projection -- which is how the haze works, and the obvious thing to reuse --
+the sky, the HUD and the item overlays were clamped inside a race, because
+they hang off their own viewports with their own far planes.  The result was a
+race with black wedges in the top corners where the sky should have been.  A draw under the race projection now
+only sets a flag, and `gfx_run` uses what the *previous* frame turned out to
+be; the frame of lag at the start of a race is behind the game's own fade-in.
+
+### Anti-aliasing: the driver does have multisample formats
+
+Asked before `SDL_CreateWindow` and then verified against the framebuffer
+rather than against SDL's own attribute:
+
+    sbk: multisample: asked 4, SDL buffers 1 samples 4
+    gfx_gl13: multisample buffers 1 samples 4 -> anti-aliasing ON
+
+A driver with no format of that size fails the window creation outright
+instead of downgrading, so the port retries once without multisampling and
+prints why.  `glCopyTexSubImage2D` resolves as it copies, so the `n64` and
+`2x` resolution modes are multisampled at their own size and then scaled.  The
+count is a pixel-format attribute, so the overlay row writes the file and the
+next start takes it; changing it live would mean destroying the context under
+a running game.
+
+### Three-point filtering: not possible here, and why
+
+The RDP samples three texels of the texel quad, not four, which is the
+characteristic diagonal look.  The fixed-function recipe would be: three
+texture units sampling the same texture one texel apart (a texture matrix
+each), a fourth unit holding a weight texture addressed by the *fractional*
+texel coordinate -- which a scaled texture coordinate and `GL_REPEAT` do give
+you for free -- and then `T0*w.r + T1*w.g + T2*w.b`.
+
+The last step is the one that cannot be written.  A texture environment stage
+multiplies by a whole RGB vector and there is no channel swizzle, so three
+weights carried in one texel cannot be applied to three separate samples; and
+there are not three spare units anyway, since the game's own combiner chains
+already use up to six.  `GL_ATI_text_fragment_shader` could express the
+arithmetic, but using it would mean re-implementing the N64 colour combiner in
+that shader language for every combiner the game uses -- a different renderer,
+not a filter.
+
+So `texfilter` ships `rdp` (each tile as the game asked, which is what the
+console did and the port's default), `point` and `bilinear`, and the README
+says why there is no fourth.  The override is applied in both places the
+filter shows: the GL sampler, and the half-texel offset bilinear needs.
+
+### Cost, measured the same way the haze was
+
+The course-9 golden replayed at real time with `--perf`, Enhanced, 640x480
+windowed, averaged over retraces 9,200-11,100 in every run so that the same
+scenery is being compared (an unaligned window is not a comparison: the
+triangle count in this race swings between 120 and 500 a frame):
+
+    run                    gfx ms   GL ms   CPU   Hz     tris
+    all four off             2.44    0.39   35%   60.0    297
+    fade-in                  2.48    0.39   36%   60.0    305
+    anti-aliasing 2x         2.47    0.39   35%   60.0    304
+    anti-aliasing 4x         2.48    0.38   35%   60.0    302
+    texfilter=point          2.46    0.38   35%   60.0    302
+    widescreen 16:9          2.81    0.41   38%   60.0    369
+
+Anti-aliasing costs the CPU nothing, which is what it should cost: the
+multisampling is the Radeon's work and the port builds the same display list.
+Widescreen costs a quarter more triangles and 0.37 ms, which is the field of
+view and not an overhead.

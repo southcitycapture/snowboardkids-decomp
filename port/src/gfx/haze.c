@@ -64,6 +64,15 @@ int sbk_haze_enabled;
 int sbk_haze_debug;
 
 int sbk_haze_on;
+int sbk_race_proj_on;
+int sbk_fadein_enabled;
+int sbk_fadein_debug;
+int sbk_fadein_on;
+float sbk_fadein_start;
+float sbk_fadein_end;
+float sbk_fadein_inv_span;
+unsigned sbk_fadein_dbg_draws, sbk_fadein_dbg_faded;
+float sbk_fadein_dbg_min = 1.0f;
 float sbk_haze_start;
 float sbk_haze_end;
 float sbk_haze_inv_span;
@@ -85,11 +94,29 @@ unsigned long sbk_haze_retrace;
 #define HAZE_END_MULT   1.50f
 
 static float haze_far;      /* the race far plane, already scaled */
+static float cull_range;    /* the camera-distance cull, in world units */
 
 float sbk_haze_note_far(float f) {
     haze_far = f;
     return f;
 }
+
+/* The game compares 16.16 fixed-point world coordinates against this, so the
+ * distance it stands for is range / 65536 in the units the far plane and the
+ * haze are written in.  patches.txt already multiplied it by sbk_far_scale,
+ * exactly as it does the far plane, so what arrives here is the range this
+ * run actually culls at. */
+int sbk_fadein_note_cull(int range) {
+    cull_range = (float)range / 65536.0f;
+    return range;
+}
+
+/* The last 14% of the cull range.  Shorter than that and an object still
+ * arrives visibly; longer and props are half-transparent while they are
+ * plainly in view.  At --drawdistance 1 that band is 2560..2976 units, which
+ * is where the first game's own fog is already most of the way to total, so
+ * Original loses nothing by not having it. */
+#define FADEIN_FRAC 0.86f
 
 void sbk_haze_frame(void) {
     static int last_course = -1;
@@ -97,8 +124,8 @@ void sbk_haze_frame(void) {
 
     sbk_haze_retrace++;
     sbk_haze_on = 0;
-    if (!sbk_haze_enabled) return;
-    if (sbk_far_scale <= 1.001f) return;   /* nothing extra was drawn to hide */
+    sbk_fadein_on = 0;
+    sbk_race_proj_on = 0;
     if (haze_far <= 1.0f) return;          /* no race viewport has been built */
 
     /* The first game has no render-context flag to key on the way the sequel
@@ -111,6 +138,31 @@ void sbk_haze_frame(void) {
     sbk_haze_color[0] = gFadeColorRed / 255.0f;
     sbk_haze_color[1] = gFadeColorGreen / 255.0f;
     sbk_haze_color[2] = gFadeColorBlue / 255.0f;
+
+    /* guPerspective's perspNorm names the far plane on its own; see the note
+     * below.  It is computed whether or not either effect is switched on,
+     * because widescreen needs the same answer -- "is this draw the race
+     * camera's?" -- to leave the menu passes in their 4:3 box. */
+    sbk_haze_persp_norm = (int)(131072.0f / haze_far);
+    sbk_race_proj_on = 1;
+
+    if (sbk_fadein_enabled && cull_range > 1.0f) {
+        sbk_fadein_end = cull_range;
+        sbk_fadein_start = cull_range * FADEIN_FRAC;
+        sbk_fadein_inv_span = 1.0f / (sbk_fadein_end - sbk_fadein_start);
+        sbk_fadein_on = 1;
+    }
+
+    if (sbk_fadein_debug && (sbk_haze_retrace % 60 == 0)) {
+        printf("sbk-fade: r%lu cull %.0f fade %.0f..%.0f draws %u faded %u minalpha %.2f\n",
+               sbk_haze_retrace, cull_range, sbk_fadein_start, sbk_fadein_end,
+               sbk_fadein_dbg_draws, sbk_fadein_dbg_faded, sbk_fadein_dbg_min);
+        sbk_fadein_dbg_draws = sbk_fadein_dbg_faded = 0;
+        sbk_fadein_dbg_min = 1.0f;
+    }
+
+    if (!sbk_haze_enabled) return;
+    if (sbk_far_scale <= 1.001f) return;   /* nothing extra was drawn to hide */
 
     {
         float orig_far = haze_far / sbk_far_scale;   /* what the N64 clipped at */
@@ -128,8 +180,6 @@ void sbk_haze_frame(void) {
      * passes are a flat 15000, the menu viewport 10000, and Silver Mountain's
      * own race viewport 1000 -- so each carries a different integer and
      * gfx_pc can tell them apart without a heuristic. */
-    sbk_haze_persp_norm = (int)(131072.0f / haze_far);
-
     sbk_haze_on = 1;
 
     if (sbk_haze_debug && (ticks++ % 60 == 0 || gRaceCourseIndex.signedValue != last_course)) {
@@ -151,4 +201,5 @@ void sbk_haze_frame(void) {
         sbk_haze_dbg_max = 0.0f;
         sbk_haze_dbg_maxdist = 0.0f;
     }
+
 }

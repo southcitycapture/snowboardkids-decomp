@@ -12,4 +12,8 @@
 # configureViewportWithFovAndFarClip, which only the ending credits use.
 src/engine/viewport_manager.c	        2800.0f,	        sbk_haze_note_far(2800.0f * sbk_far_scale),
 src/engine/viewport_manager.c	        (f32)farClip,	        (f32)farClip * sbk_far_scale,
-src/math/spatial_math.c	#define RACE_VIEWPORT_CAMERA_CULL_RANGE 0xBA00000	#define RACE_VIEWPORT_CAMERA_CULL_RANGE ((s32)(0xBA00000 * sbk_far_scale))
+#
+# The same range is what the Enhanced-mode far-object fade-in (`fadein`) fades
+# across: sbk_fadein_note_cull hands the port the number the game is really
+# culling at this run, and returns it unchanged.
+src/math/spatial_math.c	#define RACE_VIEWPORT_CAMERA_CULL_RANGE 0xBA00000	#define RACE_VIEWPORT_CAMERA_CULL_RANGE sbk_fadein_note_cull((s32)(0xBA00000 * sbk_far_scale))

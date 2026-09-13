@@ -21,6 +21,24 @@
 #include "gfx_screen_config.h"
 #include "haze.h"
 
+/* settings.txt `texfilter` (gfx_gl13.c): 0 = as the RDP asked, 1 = point
+ * everywhere, 2 = bilinear everywhere.  The choice has to be the same in both
+ * places it shows -- the sampler's filter and the half-texel offset bilinear
+ * sampling needs -- so both ask this one function. */
+extern int sbk_texfilter_mode;
+#define sbk_texfilter_linear() \
+    (sbk_texfilter_mode == 1 ? false : \
+     sbk_texfilter_mode == 2 ? true : \
+     ((rdp.other_mode_h & (3U << G_MDSFT_TEXTFILT)) != G_TF_POINT))
+
+extern int sbk_wide_output;       /* gfx_sdl_gl13.c: SBK_WIDE_16_9 */
+extern int sbk_wide_draw_full;    /* gfx_gl13.c: this frame may use the width */
+static int sbk_race_proj_seen;    /* a draw under the race projection, this frame */
+void gfx_gl13_set_fade(float f);  /* gfx_gl13.c */
+
+/* The fade currently loaded into the backend. */
+static float cur_draw_fade = 1.0f;
+
 /* --hazedbg counters, read and cleared by sbk_haze_frame(). */
 unsigned sbk_haze_dbg_proj_tris, sbk_haze_dbg_tris;
 float sbk_haze_dbg_max, sbk_haze_dbg_maxdist, sbk_haze_dbg_scale;
@@ -85,6 +103,7 @@ struct LoadedVertex {
     struct RGBA color;
     uint8_t clip_rej;
     float haze;   /* Enhanced-mode distance haze, 0..1. See gfx/haze.c. */
+    float dist;   /* eye distance in world units under the race projection */
 };
 
 struct TextureHashmapNode {
@@ -137,6 +156,11 @@ static struct RSP {
      * the eye-space scale that turns a clip-space w into a world distance. */
     bool haze_proj;
     float haze_w_to_dist;
+    /* The eye distance of the object's own origin: MP's w column applied to
+     * (0,0,0) is MP[3][3], which is the origin's clip-space w, and the same
+     * scale that turns a vertex's w into world units turns this one.  It is
+     * recomputed wherever MP is, i.e. once per G_MTX, not once per vertex. */
+    float obj_dist;
 
     struct {
         // U0.16
@@ -698,7 +722,7 @@ static void gfx_haze_projection_changed(void) {
     float sx, sy, sz, scale;
     rsp.haze_proj = false;
     rsp.haze_w_to_dist = 1.0f;
-    if (!sbk_haze_on) {
+    if (!sbk_race_proj_on) {
         return;
     }
     if (sbk_haze_persp_norm != 0 && rsp.persp_norm != 0 &&
@@ -755,6 +779,7 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
         rsp.lights_changed = 1;
     }
     gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
+    rsp.obj_dist = rsp.MP_matrix[3][3] * rsp.haze_w_to_dist;
 }
 
 static void gfx_sp_pop_matrix(uint32_t count) {
@@ -763,6 +788,7 @@ static void gfx_sp_pop_matrix(uint32_t count) {
             --rsp.modelview_matrix_stack_size;
             if (rsp.modelview_matrix_stack_size > 0) {
                 gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
+                rsp.obj_dist = rsp.MP_matrix[3][3] * rsp.haze_w_to_dist;
             }
             /* A pop changes the modelview just as a load does, and the cached
              * light directions are in the modelview's space.  gSPPopMatrix did
@@ -889,8 +915,10 @@ static void gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
          * depth-buffer curve: geometry the unmodified game would have drawn
          * is nearer than sbk_haze_start and comes out bit-for-bit unchanged. */
         d->haze = 0.0f;
+        d->dist = 0.0f;
         if (rsp.haze_proj) {
             float dist = w * rsp.haze_w_to_dist;
+            d->dist = dist;
             if (sbk_haze_debug && dist > sbk_haze_dbg_maxdist) {
                 sbk_haze_dbg_maxdist = dist;
                 sbk_haze_dbg_scale = rsp.haze_w_to_dist;
@@ -1065,6 +1093,44 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
         rdp.viewport_or_scissor_changed = false;
     }
     
+    /* Widescreen: a race frame may use the whole 16:9 frame, any other frame
+     * is confined to its centred 4:3 box.  It has to be decided for the frame
+     * and not for the draw: the sky, the HUD and the item overlays hang off
+     * their own projections, and clamping *those* left black wedges in the top
+     * corners of a race where the sky should have been.  So a draw under the
+     * race camera's projection only records the fact, and gfx_run uses what
+     * the frame before it turned out to be -- one frame of lag at the moment a
+     * race starts, which is behind the game's own fade-in. */
+    if (rsp.haze_proj) sbk_race_proj_seen = 1;
+
+    /* Far-object fade-in.  The factor is the *object's* distance, so a prop
+     * fades as one thing rather than across its own depth; the per-vertex
+     * test is only a guard, so that a single sheet of terrain running from
+     * under the camera out to the horizon can never be faded. */
+    float fade = 1.0f;
+    if (sbk_fadein_on && rsp.haze_proj && rsp.obj_dist > sbk_fadein_start) {
+        float nearest = v_arr[0]->dist;
+        if (v_arr[1]->dist < nearest) nearest = v_arr[1]->dist;
+        if (v_arr[2]->dist < nearest) nearest = v_arr[2]->dist;
+        if (nearest > sbk_fadein_start) {
+            fade = (sbk_fadein_end - rsp.obj_dist) * sbk_fadein_inv_span;
+            if (fade < 0.0f) fade = 0.0f;
+            if (fade > 1.0f) fade = 1.0f;
+        }
+    }
+    if (sbk_fadein_debug && rsp.haze_proj) {
+        sbk_fadein_dbg_draws++;
+        if (fade < 1.0f) {
+            sbk_fadein_dbg_faded++;
+            if (fade < sbk_fadein_dbg_min) sbk_fadein_dbg_min = fade;
+        }
+    }
+    if (fade != cur_draw_fade) {
+        gfx_flush();
+        cur_draw_fade = fade;
+        gfx_gl13_set_fade(fade);
+    }
+
     uint32_t cc_id = rdp.combine_mode;
     
     bool use_alpha = (rdp.other_mode_l & (G_BL_A_MEM << 18)) == 0;
@@ -1150,7 +1216,7 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
                 import_texture(i);
                 rdp.textures_changed[i] = false;
             }
-            bool linear_filter = (rdp.other_mode_h & (3U << G_MDSFT_TEXTFILT)) != G_TF_POINT;
+            bool linear_filter = sbk_texfilter_linear();
             /* N64 clamping applies at the tile's edge while the mask wraps the
              * texture inside it: a 64x32 texture under a 128x256 tile repeats
              * 2x8 times before clamping. GL has one wrap mode, so when the
@@ -1258,7 +1324,7 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
         if (use_texture) {
             float u = (v_arr[i]->u - rdp.texture_tile.uls * 8) / 32.0f;
             float v = (v_arr[i]->v - rdp.texture_tile.ult * 8) / 32.0f;
-            if ((rdp.other_mode_h & (3U << G_MDSFT_TEXTFILT)) != G_TF_POINT) {
+            if (sbk_texfilter_linear()) {
                 // Linear filter adds 0.5f to the coordinates
                 u += 0.5f;
                 v += 0.5f;
@@ -1317,11 +1383,15 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
                     buf_vbo[buf_vbo_len++] = color->g / 255.0f;
                     buf_vbo[buf_vbo_len++] = color->b / 255.0f;
                 } else {
+                    /* An already-blended draw is faded by scaling the alpha it
+                     * feeds the combiner: a sprite keeps its own cutout that
+                     * way, which a constant-alpha blend would have thrown
+                     * away.  fade is 1.0 for every draw that is not fading. */
                     if (use_fog && color == &v_arr[i]->color) {
                         // Shade alpha is 100% for fog
-                        buf_vbo[buf_vbo_len++] = 1.0f;
+                        buf_vbo[buf_vbo_len++] = fade;
                     } else {
-                        buf_vbo[buf_vbo_len++] = color->a / 255.0f;
+                        buf_vbo[buf_vbo_len++] = color->a / 255.0f * fade;
                     }
                 }
             }
@@ -2193,6 +2263,17 @@ struct GfxRenderingAPI *gfx_get_current_rendering_api(void) {
 
 static bool frame_open;
 
+/* Whether the *next* frame is a race frame, for the widescreen clamp; see the
+ * note in gfx_sp_tri.  Called once per graphics task. */
+static void gfx_wide_frame_flip(void) {
+    if (sbk_wide_output && sbk_race_proj_seen != sbk_wide_draw_full) {
+        sbk_wide_draw_full = sbk_race_proj_seen;
+        rendering_state.scissor.width = -1;   /* the scissor must be re-sent */
+    }
+    if (!sbk_wide_output) sbk_wide_draw_full = 1;
+    sbk_race_proj_seen = 0;
+}
+
 void gfx_run(Gfx *commands) {
     gfx_sp_reset();
     if (!frame_open) {
@@ -2207,6 +2288,7 @@ void gfx_run(Gfx *commands) {
          * fullscreen context can have them reset behind our back */
         memset(&rendering_state.viewport, 0xFF, sizeof(rendering_state.viewport));
         memset(&rendering_state.scissor, 0xFF, sizeof(rendering_state.scissor));
+        gfx_wide_frame_flip();
     }
     gfx_run_dl(commands);
     gfx_flush();

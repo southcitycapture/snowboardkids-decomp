@@ -130,7 +130,10 @@ void sbk_settings_defaults(void) {
     sbk_settings.draw_distance = 1;
     sbk_settings.resolution = SBK_RES_NATIVE;
     sbk_settings.filter = SBK_FILTER_NONE;
-    sbk_settings.widescreen = 0;
+    sbk_settings.widescreen = SBK_WIDE_4_3;
+    sbk_settings.fadein = 0;
+    sbk_settings.msaa = 0;
+    sbk_settings.texfilter = SBK_TEXFILTER_RDP;
     sbk_settings.fullscreen = 0;
     sbk_settings.vsync = 1;
     sbk_settings.volume = 100;
@@ -145,14 +148,19 @@ void sbk_settings_apply_mode(int mode) {
         sbk_settings.draw_distance = 2;
         sbk_settings.resolution = SBK_RES_NATIVE;
         sbk_settings.filter = SBK_FILTER_NONE;
-        sbk_settings.widescreen = 0;
         sbk_settings.haze = 1;
+        sbk_settings.fadein = 1;
+        sbk_settings.msaa = 2;
+        sbk_settings.texfilter = SBK_TEXFILTER_RDP;
     } else if (mode == SBK_MODE_ORIGINAL) {
         sbk_settings.draw_distance = 1;
         sbk_settings.resolution = SBK_RES_N64;
         sbk_settings.filter = SBK_FILTER_NONE;
-        sbk_settings.widescreen = 0;
+        sbk_settings.widescreen = SBK_WIDE_4_3;
         sbk_settings.haze = 0;
+        sbk_settings.fadein = 0;
+        sbk_settings.msaa = 0;
+        sbk_settings.texfilter = SBK_TEXFILTER_RDP;
     }
 }
 
@@ -173,12 +181,17 @@ void sbk_settings_player_defaults(void) {
 /* Which mode the individual settings currently spell, so that changing one
  * knob on the Options page moves the Mode line to CUSTOM rather than lying. */
 int sbk_settings_derive_mode(void) {
+    /* Widescreen is deliberately not part of either preset's fingerprint: it
+     * is a framing choice for the player's own screen, not a quality dial, so
+     * picking 16:9 must not turn ENHANCED into CUSTOM. */
     if (sbk_settings.draw_distance == 2 && sbk_settings.resolution == SBK_RES_NATIVE &&
-        sbk_settings.filter == SBK_FILTER_NONE && !sbk_settings.widescreen &&
-        sbk_settings.haze) return SBK_MODE_ENHANCED;
+        sbk_settings.filter == SBK_FILTER_NONE &&
+        sbk_settings.haze && sbk_settings.fadein && sbk_settings.msaa == 2 &&
+        sbk_settings.texfilter == SBK_TEXFILTER_RDP) return SBK_MODE_ENHANCED;
     if (sbk_settings.draw_distance == 1 && sbk_settings.resolution == SBK_RES_N64 &&
         sbk_settings.filter == SBK_FILTER_NONE && !sbk_settings.widescreen &&
-        !sbk_settings.haze) return SBK_MODE_ORIGINAL;
+        !sbk_settings.haze && !sbk_settings.fadein && sbk_settings.msaa == 0 &&
+        sbk_settings.texfilter == SBK_TEXFILTER_RDP) return SBK_MODE_ORIGINAL;
     return SBK_MODE_CUSTOM;
 }
 
@@ -195,15 +208,23 @@ static int name_index(const char *v, const char *const *names, int n, int fallba
 static const char *const mode_names[] = { "original", "enhanced", "custom" };
 static const char *const res_names[] = { "native", "n64", "2x" };
 static const char *const filter_names[] = { "none", "scanlines", "grille", "smooth" };
+static const char *const wide_names[] = { "4:3", "16:9" };
+static const char *const texfilter_names[] = { "rdp", "point", "bilinear" };
 
 const char *sbk_settings_mode_name(int v) { return mode_names[clampi(v, 0, 2)]; }
 const char *sbk_settings_res_name(int v) { return res_names[clampi(v, 0, 2)]; }
 const char *sbk_settings_filter_name(int v) { return filter_names[clampi(v, 0, 3)]; }
+const char *sbk_settings_wide_name(int v) { return wide_names[clampi(v, 0, 1)]; }
+const char *sbk_settings_texfilter_name(int v) { return texfilter_names[clampi(v, 0, 2)]; }
+
+float sbk_settings_aspect(void) {
+    return sbk_settings.widescreen == SBK_WIDE_16_9 ? 16.0f / 9.0f : 4.0f / 3.0f;
+}
 
 void sbk_settings_load(void) {
     FILE *f;
     char line[256];
-    int haze_seen = 0;
+    int haze_seen = 0, fadein_seen = 0;
     sbk_settings_defaults();
     if (sbk_settings_scripted) return;   /* determinism: goldens see the defaults */
     f = fopen(sbk_settings_path(), "r");
@@ -233,7 +254,16 @@ void sbk_settings_load(void) {
         else if (strcmp(key, "draw_distance") == 0) sbk_settings.draw_distance = clampi(atoi(val), 1, 4);
         else if (strcmp(key, "resolution") == 0) sbk_settings.resolution = name_index(val, res_names, 3, SBK_RES_NATIVE);
         else if (strcmp(key, "filter") == 0) sbk_settings.filter = name_index(val, filter_names, 4, SBK_FILTER_NONE);
-        else if (strcmp(key, "widescreen") == 0) sbk_settings.widescreen = atoi(val) != 0;
+        else if (strcmp(key, "widescreen") == 0) {
+            /* "4:3" / "16:9", and the 0 / 1 an older file wrote */
+            sbk_settings.widescreen = (strcmp(val, "16:9") == 0 || atoi(val) != 0) ? SBK_WIDE_16_9 : SBK_WIDE_4_3;
+        }
+        else if (strcmp(key, "fadein") == 0) { sbk_settings.fadein = atoi(val) != 0; fadein_seen = 1; }
+        else if (strcmp(key, "msaa") == 0) {
+            int n = atoi(val);
+            sbk_settings.msaa = n >= 4 ? 4 : (n >= 2 ? 2 : 0);
+        }
+        else if (strcmp(key, "texfilter") == 0) sbk_settings.texfilter = name_index(val, texfilter_names, 3, SBK_TEXFILTER_RDP);
         else if (strcmp(key, "fullscreen") == 0) sbk_settings.fullscreen = atoi(val) != 0;
         else if (strcmp(key, "vsync") == 0) sbk_settings.vsync = atoi(val) != 0;
         else if (strcmp(key, "volume") == 0) sbk_settings.volume = clampi(atoi(val), 0, 100);
@@ -247,6 +277,12 @@ void sbk_settings_load(void) {
      * since before this landed would silently not get it. Enhanced means the
      * haze; give it to them, and the next save writes the key. */
     if (!haze_seen && sbk_settings.mode == SBK_MODE_ENHANCED) sbk_settings.haze = 1;
+    /* Same again for the options that landed after the haze: an Enhanced
+     * player whose file predates them means the Enhanced of today. */
+    if (!fadein_seen && sbk_settings.mode == SBK_MODE_ENHANCED) {
+        sbk_settings.fadein = 1;
+        sbk_settings.msaa = 2;
+    }
     sbk_settings_loaded = 1;
     printf("sbk: settings from %s\n", sbk_settings_path());
 }
@@ -266,7 +302,10 @@ void sbk_settings_save(void) {
     fprintf(f, "draw_distance=%d\n", sbk_settings.draw_distance);
     fprintf(f, "resolution=%s\n", sbk_settings_res_name(sbk_settings.resolution));
     fprintf(f, "filter=%s\n", sbk_settings_filter_name(sbk_settings.filter));
-    fprintf(f, "widescreen=%d\n", sbk_settings.widescreen);
+    fprintf(f, "widescreen=%s\n", sbk_settings_wide_name(sbk_settings.widescreen));
+    fprintf(f, "fadein=%d\n", sbk_settings.fadein);
+    fprintf(f, "msaa=%d\n", sbk_settings.msaa);
+    fprintf(f, "texfilter=%s\n", sbk_settings_texfilter_name(sbk_settings.texfilter));
     fprintf(f, "fullscreen=%d\n", sbk_settings.fullscreen);
     fprintf(f, "vsync=%d\n", sbk_settings.vsync);
     fprintf(f, "volume=%d\n", sbk_settings.volume);
@@ -282,6 +321,8 @@ extern float sbk_far_scale;
 extern int sbk_wide_output;
 extern int sbk_perf_enabled;
 extern int sbk_haze_enabled;          /* gfx/haze.c */
+extern int sbk_fadein_enabled;        /* gfx/haze.c: far-object fade-in */
+void gfx_gl13_set_texfilter(int mode); /* gfx_gl13.c */
 void sbk_audio_out_set_volume(int percent);
 void gfx_gl13_set_render_scale(int mode);      /* gfx_gl13.c */
 void gfx_gl13_set_filter(int filter);
@@ -294,18 +335,26 @@ void sbk_settings_apply(void) {
     sbk_perf_enabled = sbk_settings.perf;
     sbk_audio_out_set_volume(sbk_settings.volume);
     sbk_haze_enabled = sbk_settings.haze;
+    sbk_fadein_enabled = sbk_settings.fadein;
     if (sbk_settings_scripted && !sbk_settings_forced) {
         /* No post-processing at all under a script: a golden replay must see
          * exactly the pixels it was recorded against. */
         gfx_gl13_set_render_scale(SBK_RES_NATIVE);
         gfx_gl13_set_filter(SBK_FILTER_NONE);
         sbk_haze_enabled = 0;   /* a golden replay sees the pixels it was cut against */
+        sbk_fadein_enabled = 0;
+        gfx_gl13_set_texfilter(SBK_TEXFILTER_RDP);
+        if (sbk_wide_output != SBK_WIDE_4_3) {
+            sbk_wide_output = SBK_WIDE_4_3;
+            sbk_gfx_refresh_output_rect();
+        }
         return;
     }
     if (sbk_wide_output != sbk_settings.widescreen) {
         sbk_wide_output = sbk_settings.widescreen;
         sbk_gfx_refresh_output_rect();
     }
+    gfx_gl13_set_texfilter(sbk_settings.texfilter);
     gfx_gl13_set_render_scale(sbk_settings.resolution);
     gfx_gl13_set_filter(sbk_settings.filter);
     sbk_gfx_set_vsync(sbk_settings.vsync);

@@ -12,6 +12,17 @@
 enum { SBK_MODE_ORIGINAL = 0, SBK_MODE_ENHANCED = 1, SBK_MODE_CUSTOM = 2 };
 enum { SBK_RES_NATIVE = 0, SBK_RES_N64 = 1, SBK_RES_2X = 2 };
 enum { SBK_FILTER_NONE = 0, SBK_FILTER_SCANLINES = 1, SBK_FILTER_GRILLE = 2, SBK_FILTER_SMOOTH = 3 };
+/* Widescreen is an aspect, not a switch: 4:3 is the N64's own frame, 16:9
+ * widens the *race* projection's horizontal field of view and leaves every
+ * 2D/menu task in a centred 4:3 box.  An older settings.txt wrote 0/1 and
+ * both still read as these two values. */
+enum { SBK_WIDE_4_3 = 0, SBK_WIDE_16_9 = 1 };
+/* Texture filtering.  RDP = whatever the game asked for per tile (G_TF_POINT
+ * or G_TF_BILERP), which is what the console did and the port's default.
+ * POINT and BILINEAR force one for every tile.  There is deliberately no
+ * "n64" three-point mode: see README, it cannot be done honestly on a card
+ * with no fragment programs. */
+enum { SBK_TEXFILTER_RDP = 0, SBK_TEXFILTER_POINT = 1, SBK_TEXFILTER_BILINEAR = 2 };
 
 /* Registered games: this port's own game plus its sibling. Either bundle is a
  * front door -- the launcher lists both, and picking the other one hands the
@@ -32,7 +43,10 @@ struct SbkSettings {
     int draw_distance;   /* 1..4 */
     int resolution;      /* SBK_RES_* */
     int filter;          /* SBK_FILTER_* */
-    int widescreen;      /* 0/1 -- --wide */
+    int widescreen;      /* SBK_WIDE_* -- --widescreen=4:3|16:9 */
+    int fadein;          /* 0/1 -- far objects fade in instead of popping */
+    int msaa;            /* 0, 2 or 4 -- multisample samples (window creation) */
+    int texfilter;       /* SBK_TEXFILTER_* */
     int fullscreen;      /* 0/1 */
     int vsync;           /* 0/1 */
     int volume;          /* 0..100 */
@@ -62,6 +76,16 @@ void sbk_settings_apply(void);
 
 /* Set every derived setting from mode (Original / Enhanced). */
 void sbk_settings_apply_mode(int mode);
+
+const char *sbk_settings_mode_name(int v);
+const char *sbk_settings_res_name(int v);
+const char *sbk_settings_filter_name(int v);
+const char *sbk_settings_wide_name(int v);
+const char *sbk_settings_texfilter_name(int v);
+int sbk_settings_derive_mode(void);
+
+/* 16.0/9.0 or 4.0/3.0 for the current widescreen setting. */
+float sbk_settings_aspect(void);
 
 int sbk_game_count(void);
 const struct SbkGameEntry *sbk_game_at(int i);

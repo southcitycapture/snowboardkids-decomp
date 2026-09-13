@@ -51,6 +51,14 @@ static const char *const mode_names[]   = { "ORIGINAL", "ENHANCED", "CUSTOM" };
 static const char *const res_names[]    = { "NATIVE", "N64 320x240", "2X 640x480" };
 static const char *const filter_names[] = { "NONE", "SCANLINES", "GRILLE", "SMOOTH" };
 static const char *const off_on[]       = { "OFF", "ON" };
+static const char *const wide_names[]   = { "4:3", "16:9" };
+static const char *const msaa_names[]   = { "OFF", "2X", "4X" };
+static const char *const texf_names[]   = { "AS THE RDP ASKS", "POINT", "BILINEAR" };
+
+/* The Anti-aliasing row stores 0/1/2 and the setting stores 0/2/4: a
+ * multisample count is chosen before the window exists, so the row is an
+ * index and ui_sync_shadows() keeps the two in step. */
+static int ui_msaa_shadow;
 
 static int ui_fullscreen_shadow;   /* the toggle's backing int */
 
@@ -60,7 +68,10 @@ static struct UiItem options_items[] = {
     { "Distance haze", IT_TOGGLE, &sbk_settings.haze,          0, 1, 1, off_on,       0, -1 },
     { "Resolution",    IT_CHOICE, &sbk_settings.resolution,    0, 2, 1, res_names,    0, -1 },
     { "Filter",        IT_CHOICE, &sbk_settings.filter,        0, 3, 1, filter_names, 0, -1 },
-    { "Widescreen",    IT_TOGGLE, &sbk_settings.widescreen,    0, 1, 1, off_on,       0, -1 },
+    { "Texture filter",IT_CHOICE, &sbk_settings.texfilter,     0, 2, 1, texf_names,   0, -1 },
+    { "Far fade-in",   IT_TOGGLE, &sbk_settings.fadein,        0, 1, 1, off_on,       0, -1 },
+    { "Anti-aliasing", IT_CHOICE, &ui_msaa_shadow,             0, 2, 1, msaa_names,   0, -1 },
+    { "Widescreen",    IT_CHOICE, &sbk_settings.widescreen,    0, 1, 1, wide_names,   0, -1 },
     { "Fullscreen",    IT_TOGGLE, &ui_fullscreen_shadow,       0, 1, 1, off_on,       0, -1 },
     { "V-sync",        IT_TOGGLE, &sbk_settings.vsync,         0, 1, 1, off_on,       0, -1 },
     { "Volume",        IT_RANGE,  &sbk_settings.volume,        0, 100, 5, NULL,       0, -1 },
@@ -178,6 +189,13 @@ static void clamp_cursor(struct Nav *n, struct UiItem *items, int count) {
     if (!item_selectable(&items[n->cursor])) move_cursor(n, items, count, 1);
 }
 
+/* The rows that do not store the setting directly (fullscreen asks the window,
+ * anti-aliasing is an index into 0/2/4) are refreshed whenever a page opens. */
+static void ui_sync_shadows(void) {
+    ui_fullscreen_shadow = sbk_gfx_is_fullscreen();
+    ui_msaa_shadow = sbk_settings.msaa >= 4 ? 2 : (sbk_settings.msaa >= 2 ? 1 : 0);
+}
+
 static void adjust(struct UiItem *it, int dir) {
     int v;
     if (it->val == NULL) return;
@@ -190,6 +208,13 @@ static void adjust(struct UiItem *it, int dir) {
     } else if (it->val == &ui_fullscreen_shadow) {
         sbk_gfx_set_fullscreen(v);
         sbk_settings.fullscreen = v;
+    } else if (it->val == &ui_msaa_shadow) {
+        /* The sample count is a pixel-format attribute, so it is chosen when
+         * the window is created: the row writes the setting and the file, and
+         * the next start picks it up.  Changing it live would mean destroying
+         * the GL context under a running game. */
+        sbk_settings.msaa = v == 0 ? 0 : (v == 1 ? 2 : 4);
+        sbk_settings.mode = sbk_settings_derive_mode();
     } else {
         sbk_settings.mode = sbk_settings_derive_mode();
     }
@@ -353,7 +378,7 @@ int sbk_launcher_run(void) {
     if (sbk_settings_scripted || !sbk_settings.launcher) return 1;
     sbk_ui_launcher_active = 1;
     build_main_page();
-    ui_fullscreen_shadow = sbk_gfx_is_fullscreen();
+    ui_sync_shadows();
     memset(&nav, 0, sizeof(nav));
     page = 0;
     clamp_cursor(&nav, main_items, main_n);
@@ -399,7 +424,7 @@ int sbk_launcher_run(void) {
                     else if (it->action == ACT_BACK) { page = 0; nav.cursor = 0; clamp_cursor(&nav, main_items, main_n); }
                     else if (it->action == ACT_DEFAULTS) {
                         sbk_settings_player_defaults();
-                        ui_fullscreen_shadow = sbk_gfx_is_fullscreen();
+                        ui_sync_shadows();
                         sbk_settings.fullscreen = ui_fullscreen_shadow;
                         sbk_settings_apply();
                         sbk_settings_save();
@@ -442,7 +467,7 @@ int sbk_ui_overlay_tick(void) {
     if (r.menu && menu_hold == 0) {
         overlay_open = !overlay_open;
         if (overlay_open) {
-            ui_fullscreen_shadow = sbk_gfx_is_fullscreen();
+            ui_sync_shadows();
             nav.cursor = 0;
             memset(nav.hold, 0, sizeof(nav.hold));
             clamp_cursor(&nav, options_items, OPTIONS_N);
@@ -465,7 +490,7 @@ int sbk_ui_overlay_tick(void) {
             else if (it->action == ACT_QUIT) { sbk_settings_save(); sbk_input_request_quit(); }
             else if (it->action == ACT_DEFAULTS) {
                 sbk_settings_player_defaults();
-                ui_fullscreen_shadow = sbk_gfx_is_fullscreen();
+                ui_sync_shadows();
                 sbk_settings.fullscreen = ui_fullscreen_shadow;
                 sbk_settings_apply();
                 sbk_settings_save();

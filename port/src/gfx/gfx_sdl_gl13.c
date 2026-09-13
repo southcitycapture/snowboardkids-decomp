@@ -16,24 +16,32 @@ static SDL_Window *wnd;
 static SDL_GLContext ctx;
 static int win_w = DESIRED_SCREEN_WIDTH, win_h = DESIRED_SCREEN_HEIGHT;
 static int out_w, out_h;
-int sbk_wide_output; /* --wide: fill the window, 3D gets a wider view (sm64-port style); default is a 4:3 letterbox */
+int sbk_wide_output; /* SBK_WIDE_4_3 / SBK_WIDE_16_9: the aspect of the output rectangle */
+int sbk_glinfo;      /* --glinfo: dump the GL strings and extension list at init */
+int sbk_msaa_samples; /* what the driver actually gave us (0 = none) */
 
 void gfx_gl13_set_output_rect(int x, int y, int w, int h, int win_w, int win_h);
+void gfx_gl13_set_widescreen(int wide);
 
-/* The frame is a 4:3 box centred in the window, unless --wide. */
+/* The frame is a box of the chosen aspect (4:3, or 16:9 under widescreen)
+ * centred in the window; the bars around it are cleared black every frame.
+ * Nothing is stretched either way -- 16:9 widens the race camera's field of
+ * view (gfx_pc's aspect correction does that on its own once the render
+ * target is wider) and leaves every 2D task in a centred 4:3 box. */
 static void update_output_rect(void) {
     int w = win_w, h = win_h, x = 0, y = 0;
-    if (!sbk_wide_output) {
-        if (w * 3 > h * 4) {
-            w = h * 4 / 3;
-            x = (win_w - w) / 2;
-        } else {
-            h = w * 3 / 4;
-            y = (win_h - h) / 2;
-        }
+    int an = sbk_wide_output ? 16 : 4;      /* aspect numerator / denominator */
+    int ad = sbk_wide_output ? 9 : 3;
+    if (w * ad > h * an) {
+        w = h * an / ad;
+        x = (win_w - w) / 2;
+    } else {
+        h = w * ad / an;
+        y = (win_h - h) / 2;
     }
     out_w = w; out_h = h;
-    printf("sbk: window %dx%d, frame %dx%d at %d,%d\n", win_w, win_h, w, h, x, y);
+    printf("sbk: window %dx%d, frame %dx%d at %d,%d (%d:%d)\n", win_w, win_h, w, h, x, y, an, ad);
+    gfx_gl13_set_widescreen(sbk_wide_output);
     gfx_gl13_set_output_rect(x, y, w, h, win_w, win_h);
 }
 
@@ -79,7 +87,24 @@ static void gfx_sdl_init(const char *window_title, bool start_in_fullscreen) {
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+    /* Anti-aliasing is a pixel-format attribute, so it is asked for here and
+     * nowhere else.  If the driver has no multisample format of that size the
+     * window creation fails outright (it does not silently downgrade), so the
+     * second attempt is the plain format again and the run says so rather
+     * than pretending. */
+    if (sbk_settings.msaa > 0) {
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, sbk_settings.msaa);
+    }
     wnd = SDL_CreateWindow(window_title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
+    if (wnd == NULL && sbk_settings.msaa > 0) {
+        fprintf(stderr, "sbk: no %dx multisample pixel format (%s); anti-aliasing off\n",
+                sbk_settings.msaa, SDL_GetError());
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
+        sbk_settings.msaa = 0;
+        wnd = SDL_CreateWindow(window_title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
+    }
     if (wnd == NULL) {
         fprintf(stderr, "sbk: SDL_CreateWindow: %s\n", SDL_GetError());
         exit(1);
@@ -93,6 +118,18 @@ static void gfx_sdl_init(const char *window_title, bool start_in_fullscreen) {
         exit(1);
     }
     SDL_GL_MakeCurrent(wnd, ctx);
+    {
+        /* What the context really came back with.  SDL reports the attribute
+         * it asked for; GL reports what the buffer has, which is the number
+         * that counts. */
+        int bufs = 0, smp = 0;
+        SDL_GL_GetAttribute(SDL_GL_MULTISAMPLEBUFFERS, &bufs);
+        SDL_GL_GetAttribute(SDL_GL_MULTISAMPLESAMPLES, &smp);
+        sbk_msaa_samples = 0;
+        if (bufs > 0 && smp > 0) sbk_msaa_samples = smp;
+        printf("sbk: multisample: asked %d, SDL buffers %d samples %d\n",
+               sbk_settings.msaa, bufs, smp);
+    }
     if (sbk_novsync || SDL_GL_SetSwapInterval(1) != 0) {
         SDL_GL_SetSwapInterval(0);
     }
