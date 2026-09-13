@@ -203,6 +203,7 @@ const char *sbk_settings_filter_name(int v) { return filter_names[clampi(v, 0, 3
 void sbk_settings_load(void) {
     FILE *f;
     char line[256];
+    int haze_seen = 0;
     sbk_settings_defaults();
     if (sbk_settings_scripted) return;   /* determinism: goldens see the defaults */
     f = fopen(sbk_settings_path(), "r");
@@ -238,9 +239,14 @@ void sbk_settings_load(void) {
         else if (strcmp(key, "volume") == 0) sbk_settings.volume = clampi(atoi(val), 0, 100);
         else if (strcmp(key, "launcher") == 0) sbk_settings.launcher = atoi(val) != 0;
         else if (strcmp(key, "perf") == 0) sbk_settings.perf = atoi(val) != 0;
-        else if (strcmp(key, "haze") == 0) sbk_settings.haze = atoi(val) != 0;
+        else if (strcmp(key, "haze") == 0) { sbk_settings.haze = atoi(val) != 0; haze_seen = 1; }
     }
     fclose(f);
+    /* A settings.txt written before the haze existed has no key for it, and
+     * the port's baseline is off -- so an Enhanced player who has been running
+     * since before this landed would silently not get it. Enhanced means the
+     * haze; give it to them, and the next save writes the key. */
+    if (!haze_seen && sbk_settings.mode == SBK_MODE_ENHANCED) sbk_settings.haze = 1;
     sbk_settings_loaded = 1;
     printf("sbk: settings from %s\n", sbk_settings_path());
 }
