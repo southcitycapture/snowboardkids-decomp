@@ -255,8 +255,11 @@ void sbk_settings_load(void) {
         else if (strcmp(key, "resolution") == 0) sbk_settings.resolution = name_index(val, res_names, 3, SBK_RES_NATIVE);
         else if (strcmp(key, "filter") == 0) sbk_settings.filter = name_index(val, filter_names, 4, SBK_FILTER_NONE);
         else if (strcmp(key, "widescreen") == 0) {
-            /* "4:3" / "16:9", and the 0 / 1 an older file wrote */
-            sbk_settings.widescreen = (strcmp(val, "16:9") == 0 || atoi(val) != 0) ? SBK_WIDE_16_9 : SBK_WIDE_4_3;
+            /* "4:3" / "16:9", and the 0 / 1 an older file wrote.  Not atoi():
+             * atoi("4:3") is 4, so the file's own 4:3 read back as widescreen
+             * and a soak came up 16:9 against a settings.txt that said 4:3. */
+            sbk_settings.widescreen = (strcmp(val, "16:9") == 0 || strcmp(val, "1") == 0)
+                                      ? SBK_WIDE_16_9 : SBK_WIDE_4_3;
         }
         else if (strcmp(key, "fadein") == 0) { sbk_settings.fadein = atoi(val) != 0; fadein_seen = 1; }
         else if (strcmp(key, "msaa") == 0) {
