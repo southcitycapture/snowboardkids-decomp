@@ -802,6 +802,11 @@ int sbk_launcher_run(void) {
     if (start) {
         sbk_settings_save();
         sbk_settings_apply();
+    } else {
+        /* Cmd+Q or Esc out of the launcher is a quit like any other: the mode
+         * and the options the player was just looking at are what they get
+         * next time, so the file goes down before the process does. */
+        sbk_settings_save();
     }
     return start;
 }

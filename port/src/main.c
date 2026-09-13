@@ -338,6 +338,9 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--menutrace") == 0) {
             extern int sbk_menutrace;
             sbk_menutrace = 1;
+        } else if (strcmp(argv[i], "--paddbg") == 0) {
+            extern int sbk_paddbg;
+            sbk_paddbg = 1; /* raw pad reports and button/axis numbers */
         } else if (strcmp(argv[i], "--nopad") == 0) {
             extern int sbk_nopad;
             sbk_nopad = 1;  /* no gamepad: no Rumble Pak, no stray stick input */
@@ -390,9 +393,19 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* find_rom() ends on a guess -- the bundle's own Resources -- and on a
+     * bring-your-own-ROM install there is nothing there.  That is the normal
+     * case, not an error, so it is not worth a "cannot open" line in
+     * Console.app: look before leaping, and let the friendly line below say
+     * what to do. */
+    if (rom != NULL && !rom_was_explicit) {
+        FILE *probe = fopen(rom, "rb");
+        if (probe == NULL) rom = NULL;
+        else fclose(probe);
+    }
     if (rom != NULL && sbk_rom_load(rom) != 0) rom = NULL;
     if (rom == NULL && sbk_settings_scripted) {
-        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide|--widescreen=4:3|16:9] [--fadein[=0|1]] [--msaa=0|2|4] [--texfilter=rdp|point|bilinear] [--start] [--haze[=0|1]] [--hazedbg] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide|--widescreen=4:3|16:9] [--fadein[=0|1]] [--msaa=0|2|4] [--texfilter=rdp|point|bilinear] [--start] [--haze[=0|1]] [--hazedbg] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--paddbg] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     if (rom != NULL) printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -595,6 +608,10 @@ int main(int argc, char **argv) {
     }
 
     printf("sbk: exiting after %lu retraces\n", retraces);
+    /* However the player leaves -- Esc, Cmd+Q, Quit on the overlay -- the
+     * settings they were playing with are what they get next time.  (A
+     * scripted run is a no-op here: sbk_settings_save() returns at once.) */
+    sbk_settings_save();
     if (sbk_hash_frames) {
         printf("sbk: last frame hash %08x (swap %u)\n", sbk_last_frame_hash, sbk_vi_swap_serial);
     }

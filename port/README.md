@@ -20,6 +20,55 @@ Mode screen, a race in Enhanced mode, the same game at the N64's 320x240 with sc
 2x with the aperture grille, and the ending credits the self-play campaign
 reached.
 
+## Install and play
+
+<p align="center">
+  <img src="docs/screenshots/sbk-package-finder.png" width="49%" alt="The package folder in the Finder on Leopard: two applications and a Read Me">
+  <img src="docs/screenshots/sbk-firstrun-launcher.png" width="49%" alt="A first run: two grey boxes reading NO CARTRIDGE">
+</p>
+
+
+The two ports ship together as **Snowboard Kids 1+2 PowerPC Edition**: a
+folder (and a `.dmg` of it that Leopard mounts) holding
+
+```
+Snowboard Kids 1+2 PowerPC Edition/
+    Snowboard Kids.app
+    Snowboard Kids 2.app
+    Read Me.txt
+```
+
+and nothing else.  Drag both applications into `/Applications`, open either
+one, and put your own cartridge dumps in
+`~/Library/Application Support/SnowboardKids/ROMs/` -- the launcher creates
+that folder itself and has a button that opens it in the Finder.  Neither
+bundle contains a ROM.  A first run comes up fullscreen in Enhanced mode with
+two grey boxes and the ROM-folder note; drop the dumps in, close the note, and
+the boxes turn into the games' own cover art without a restart.
+
+One script in this repository builds the whole thing, driving the sequel's
+repository next door at `../snowboardkids2-decomp`:
+
+```sh
+port/tools/make_package.sh              # cross-build both, bundle, folder, .dmg
+port/tools/make_package.sh --no-build   # just re-bundle what is already built
+port/tools/make_package.sh --with-rom   # personal build: dumps inside each .app
+port/tools/make_package.sh --no-dmg
+```
+
+The output lands in `port/build-ppc-darwin/`.  `--with-rom` is for one's own
+machine only: the repositories have never contained a ROM and neither does
+what `make_package.sh` builds by default.
+
+Each `.app` carries `CFBundleShortVersionString` 1.0, a
+`CFBundleGetInfoString` of "Snowboard Kids 1+2 PowerPC Edition" and
+`LSMinimumSystemVersion` **10.5**.  The code itself is built against the
+10.4u SDK with `-mmacosx-version-min=10.4`, but the statically linked SDL2
+reaches IOHIDManager for the game pad, which is 10.5 and later only -- so 10.5
+is what the Info.plist declares.
+
+See `port/docs/release-notes.md` for what 1.0 does and does not do.
+
 ## Status (11 September 2026)
 
 | Milestone | State |

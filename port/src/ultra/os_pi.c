@@ -85,11 +85,12 @@ static s32 sbk_pi_copy(s32 direction, u32 devAddr, void *dramAddr, u32 size) {
     return 0;
 }
 
+extern int sbk_trace;   /* --trace: the first ROM DMAs */
 unsigned sbk_stat_dma;
 
 s32 osPiStartDma(OSIoMesg *mb, s32 priority, s32 direction, u32 devAddr, void *dramAddr, u32 size, OSMesgQueue *mq) {
     (void)priority;
-    if (sbk_stat_dma++ < 12) {
+    if (sbk_stat_dma++ < 12 && sbk_trace) {
         printf("sbk: dma rom 0x%06x -> %p (%u bytes)\n", devAddr, dramAddr, size);
     }
     sbk_pi_copy(direction, devAddr, dramAddr, size);

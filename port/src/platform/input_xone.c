@@ -31,7 +31,11 @@ static SDL_Thread *reader;
 static volatile int present;
 static volatile struct sbk_xone_state state;
 static uint8_t seq;
-static int report_log = 6;
+/* --paddbg (main.c): the first few raw GIP reports, for working out a new
+ * pad's byte layout.  Off by default -- a normal run says only that the
+ * controller was found. */
+extern int sbk_paddbg;
+static int report_log;
 
 static const uint16_t products[] = { 0x02D1, 0x02DD, 0x02E3, 0x02EA, 0x02FD, 0x0B00, 0x0B0A, 0x0B12, 0x0B20, 0 };
 
@@ -98,7 +102,7 @@ static int open_interface(io_service_t svc) {
     (*xintf)->GetInterfaceClass(xintf, &cls);
     (*xintf)->GetInterfaceSubClass(xintf, &sub);
     (*xintf)->GetInterfaceProtocol(xintf, &proto);
-    printf("sbk: xone: interface class %02x/%02x/%02x\n", cls, sub, proto);
+    if (sbk_paddbg) printf("sbk: xone: interface class %02x/%02x/%02x\n", cls, sub, proto);
     if (cls != 0xFF || sub != 0x47 || proto != 0xD0) {
         (*xintf)->Release(xintf);
         xintf = NULL;
@@ -160,7 +164,7 @@ static int open_device(io_service_t svc, uint16_t pid) {
         }
     }
     (*xdev)->GetConfiguration(xdev, &cfg);
-    printf("sbk: xone: device 045e:%04x open, configuration %u\n", pid, cfg);
+    if (sbk_paddbg) printf("sbk: xone: device 045e:%04x open, configuration %u\n", pid, cfg);
     if (cfg == 0) {
         IOUSBConfigurationDescriptorPtr d;
         if ((*xdev)->GetConfigurationDescriptorPtr(xdev, 0, &d) == kIOReturnSuccess) {
@@ -211,7 +215,7 @@ int sbk_xone_open(void) {
             CFNumberGetValue(vn, kCFNumberSInt32Type, &dvid);
             CFRelease(vn);
         }
-        printf("sbk: xone: USB device %04x:%04x\n", (unsigned)dvid, (unsigned)pid);
+        if (sbk_paddbg) printf("sbk: xone: USB device %04x:%04x\n", (unsigned)dvid, (unsigned)pid);
         if (dvid != 0x045E) {
             IOObjectRelease(svc);
             continue;
@@ -228,6 +232,7 @@ int sbk_xone_open(void) {
             send_packet(power_on, sizeof(power_on));
             reader = SDL_CreateThread(reader_main, "xone", NULL);
             printf("sbk: Xbox One controller 045e:%04x via IOKit (pipes in %u out %u)\n", (unsigned)pid, in_pipe, out_pipe);
+            report_log = sbk_paddbg ? 6 : 0;
         }
         IOObjectRelease(svc);
     }

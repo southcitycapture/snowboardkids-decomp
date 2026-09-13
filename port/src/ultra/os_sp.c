@@ -11,6 +11,7 @@ extern void sbk_gfx_task(OSTask *task);   /* port/src/gfx/gfx_task.c   */
 extern void sbk_audio_task(OSTask *task); /* port/src/audio/audio_task.c */
 
 static OSTask *sbk_sp_loaded;
+extern int sbk_trace;
 unsigned sbk_task_count;
 
 extern int sbk_headless;
@@ -35,7 +36,8 @@ void osSpTaskStartGo(OSTask *tp) {
     }
     switch (tp->t.type) {
         case M_GFXTASK:
-            if (sbk_task_count++ < 4) {
+            if (sbk_task_count++ < 4 && sbk_trace) {
+                /* --trace only: the first gfx tasks the game hands to the RSP */
                 printf("sbk: gfx task %u: dl=%p size=%u\n", sbk_task_count, (void *)tp->t.data_ptr, (unsigned)tp->t.data_size);
             }
             sbk_host_call(sbk_run_gfx, tp);

@@ -117,9 +117,13 @@ void sbk_gfx_task(OSTask *task) {
         sbk_tex_dump_left = 120;
         sbk_frame_dump_left = sbk_dump_frames;
     }
-    if ((sbk_trace && count <= 6) || (sbk_dump_task && count >= sbk_dump_task && count < sbk_dump_task + 4)) {
+    /* sbk_dump_task is -1 when --dumpdl was not given, and -1 is true: the
+     * old test dumped the first two display lists of every launch into
+     * Console.app.  Nothing is armed unless a task number was actually asked
+     * for, so compare against a positive one. */
+    if ((sbk_trace && count <= 6) || (sbk_dump_task > 0 && count >= sbk_dump_task && count < sbk_dump_task + 4)) {
         unsigned n = task->t.data_size / sizeof(Gfx);
-        dump_task(count, task, dl, count >= sbk_dump_task ? n : 96);
+        dump_task(count, task, dl, (sbk_dump_task > 0 && count >= sbk_dump_task) ? n : 96);
     } else if (sbk_dump_tasks_left > 0) {
         /* --dumpdlat: the interesting list is the one on screen at a given
          * retrace, and a gfx task count is no way to find it. */

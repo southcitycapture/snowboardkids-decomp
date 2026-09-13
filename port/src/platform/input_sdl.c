@@ -27,6 +27,12 @@ static int sbk_quit;
 static uint16_t sbk_buttons;
 static int8_t sbk_stick_x, sbk_stick_y;
 static unsigned sbk_pad_log_left;  /* raw events still to log */
+/* --paddbg: the raw button/axis/hat numbers, which is how an unmapped pad gets
+ * an SDL_GAMECONTROLLERCONFIG string written for it.  Off by default: a player
+ * who just opens the app should not find two hundred lines of them in
+ * Console.app, and the one "gamepad: <name>" line below says all a normal run
+ * needs to say. */
+int sbk_paddbg;
 
 static void open_pad(int index) {
     if (sbk_pad != NULL || sbk_joy != NULL) return;
@@ -45,10 +51,10 @@ static void open_pad(int index) {
             printf("sbk: joystick (no controller mapping, raw fallback): %s  axes=%d buttons=%d hats=%d guid=%s\n",
                    SDL_JoystickName(sbk_joy), SDL_JoystickNumAxes(sbk_joy), SDL_JoystickNumButtons(sbk_joy),
                    SDL_JoystickNumHats(sbk_joy), guid);
-            printf("sbk: to map it, set SDL_GAMECONTROLLERCONFIG=\"%s,name,a:b0,b:b1,x:b2,y:b3,start:b7,leftshoulder:b4,rightshoulder:b5,lefttrigger:a2,leftx:a0,lefty:a1,rightx:a3,righty:a4,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2\" using the numbers from the sbk-pad lines\n", guid);
+            if (sbk_paddbg) printf("sbk: to map it, set SDL_GAMECONTROLLERCONFIG=\"%s,name,a:b0,b:b1,x:b2,y:b3,start:b7,leftshoulder:b4,rightshoulder:b5,lefttrigger:a2,leftx:a0,lefty:a1,rightx:a3,righty:a4,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2\" using the numbers from the sbk-pad lines\n", guid);
         }
     }
-    sbk_pad_log_left = 200;
+    sbk_pad_log_left = sbk_paddbg ? 200 : 0;
     if (sbk_joy != NULL && SDL_JoystickIsHaptic(sbk_joy)) {
         sbk_haptic = SDL_HapticOpenFromJoystick(sbk_joy);
         if (sbk_haptic != NULL && SDL_HapticRumbleInit(sbk_haptic) != 0) {
