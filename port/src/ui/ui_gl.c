@@ -17,6 +17,45 @@ static GLuint logo_tex;
 #include "ui_logo.h"
 static int in_ui;
 
+/* The launcher writes with the game's own sprite font when a ROM is present
+ * (ui_rom_art.c pulls the sheet out of the cartridge dump and installs it
+ * here) and with the port's generated 5x7 font when none is.  Both are the
+ * same shape as far as the drawing goes -- a grid of fixed cells in one
+ * texture -- so one descriptor covers them and sbk_ui_text() does not branch.
+ *
+ * The ROM font has no glyphs below 0x20, and the UI's three little arrow and
+ * bullet pictures live at 1, 2 and 3, so those always come from the built-in
+ * texture: a string that mixes the two swaps the binding mid-draw. */
+struct UiFont {
+    GLuint tex;
+    int tex_w, tex_h;
+    int cols;          /* cells across the texture */
+    int cell;          /* cell size in texels (square) */
+    int advance;       /* pen movement in texels */
+    int first;         /* character code of cell 0 */
+    int fold_lower;    /* 1 = 'a' draws 'A' (the games have no lowercase) */
+    int tinted;        /* 1 = RGBA glyphs to modulate, 0 = an alpha mask */
+};
+
+static struct UiFont font_builtin = { 0, 128, 128, 16, 8, SBK_FONT_ADVANCE, 0, 0, 0 };
+static int force_builtin;
+static int force_builtin_fwd(void) { return force_builtin; }
+static struct UiFont font_rom;
+static int font_rom_ready;
+
+static int force_builtin_fwd(void);
+
+static struct UiFont *font_for(int code) {
+    if (force_builtin_fwd()) return &font_builtin;
+    if (font_rom_ready && code >= font_rom.first &&
+        code - font_rom.first < font_rom.cols * (font_rom.tex_h / font_rom.cell)) {
+        return &font_rom;
+    }
+    return &font_builtin;
+}
+
+static struct UiFont *font_body(void) { return font_rom_ready ? &font_rom : &font_builtin; }
+
 static void font_upload(void) {
     /* 16 x 8 cells of 8x8 = 128x64, padded to a 128x128 POT texture (the
      * Radeon 9000 has no NPOT support). */
@@ -40,7 +79,34 @@ static void font_upload(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    font_builtin.tex = font_tex;
 }
+
+void sbk_ui_font_set_rom(const unsigned char *rgba, int w, int h, int cols,
+                         int cell, int advance, int first, int fold_lower) {
+    GLuint t;
+    glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    /* GL_NEAREST: these are 8x8 pixel glyphs and they are meant to look it */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    font_rom.tex = t;
+    font_rom.tex_w = w;
+    font_rom.tex_h = h;
+    font_rom.cols = cols;
+    font_rom.cell = cell;
+    font_rom.advance = advance;
+    font_rom.first = first;
+    font_rom.fold_lower = fold_lower;
+    font_rom.tinted = 1;
+    font_rom_ready = 1;
+}
+
+int sbk_ui_font_is_rom(void) { return font_rom_ready; }
 
 /* The launcher logo: uploaded once into a 512x512 texture (the 288-row image
  * in the top rows, the rest untouched), drawn with linear filtering. */
@@ -139,35 +205,63 @@ void sbk_ui_border(int x, int y, int w, int h, int t, struct SbkColor c) {
 }
 
 int sbk_ui_text_w(const char *s, int scale) {
-    return (int)strlen(s) * SBK_FONT_ADVANCE * scale;
+    return (int)strlen(s) * font_body()->advance * scale;
 }
 
 int sbk_ui_text_h(int scale) {
-    return SBK_FONT_CELL * scale;
+    return font_body()->cell * scale;
+}
+
+/* Force the port's own font for one string.  Used for file paths: the games'
+ * sheets have no lowercase, and a path shouted in capitals reads like a
+ * different path from the one the Finder shows. */
+void sbk_ui_text_ascii(int x, int y, int scale, const char *s, struct SbkColor c) {
+    force_builtin = 1;
+    sbk_ui_text(x, y, scale, s, c);
+    force_builtin = 0;
+}
+
+int sbk_ui_text_ascii_w(const char *s, int scale) {
+    return (int)strlen(s) * font_builtin.advance * scale;
 }
 
 void sbk_ui_text(int x, int y, int scale, const char *s, struct SbkColor c) {
     const unsigned char *p = (const unsigned char *)s;
     int pen = x;
+    struct UiFont *bound = NULL;
+    if (font_tex == 0) font_upload();
     glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, font_tex);
-    glColor4f(c.r, c.g, c.b, c.a);
-    glBegin(GL_QUADS);
-    for (; *p != '\0'; p++, pen += SBK_FONT_ADVANCE * scale) {
+    for (; *p != '\0'; p++) {
         int code = *p & 0x7F;
+        struct UiFont *f;
+        int idx, cx, cy, size;
         float u0, v0, u1, v1;
-        int cx = (code % 16) * 8, cy = (code / 16) * 8;
-        if (code == ' ') continue;
-        u0 = (float)cx / 128.0f;
-        v0 = (float)cy / 128.0f;
-        u1 = (float)(cx + 8) / 128.0f;
-        v1 = (float)(cy + 8) / 128.0f;
+        if (code == ' ') { pen += (force_builtin ? font_builtin.advance : font_body()->advance) * scale; continue; }
+        if (!force_builtin && font_rom_ready && font_rom.fold_lower && code >= 'a' && code <= 'z') code -= 32;
+        f = font_for(code);
+        idx = code - f->first;
+        if (idx < 0) { pen += f->advance * scale; continue; }
+        if (f != bound) {
+            if (bound != NULL) glEnd();
+            glBindTexture(GL_TEXTURE_2D, f->tex);
+            glColor4f(c.r, c.g, c.b, c.a);
+            glBegin(GL_QUADS);
+            bound = f;
+        }
+        cx = (idx % f->cols) * f->cell;
+        cy = (idx / f->cols) * f->cell;
+        size = f->cell * scale;
+        u0 = (float)cx / (float)f->tex_w;
+        v0 = (float)cy / (float)f->tex_h;
+        u1 = (float)(cx + f->cell) / (float)f->tex_w;
+        v1 = (float)(cy + f->cell) / (float)f->tex_h;
         glTexCoord2f(u0, v0); glVertex2i(pen, y);
-        glTexCoord2f(u1, v0); glVertex2i(pen + 8 * scale, y);
-        glTexCoord2f(u1, v1); glVertex2i(pen + 8 * scale, y + 8 * scale);
-        glTexCoord2f(u0, v1); glVertex2i(pen, y + 8 * scale);
+        glTexCoord2f(u1, v0); glVertex2i(pen + size, y);
+        glTexCoord2f(u1, v1); glVertex2i(pen + size, y + size);
+        glTexCoord2f(u0, v1); glVertex2i(pen, y + size);
+        pen += f->advance * scale;
     }
-    glEnd();
+    if (bound != NULL) glEnd();
     glDisable(GL_TEXTURE_2D);
 }
 

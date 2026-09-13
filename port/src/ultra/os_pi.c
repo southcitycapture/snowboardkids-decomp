@@ -34,8 +34,24 @@ int sbk_rom_load(const char *path) {
         return -1;
     }
     fclose(f);
-    if (!(buf[0] == 0x80 && buf[1] == 0x37 && buf[2] == 0x12 && buf[3] == 0x40)) {
-        fprintf(stderr, "sbk: %s is not a big-endian (.z64) ROM\n", path);
+    /* Any of the three byte orders a dump gets saved in.  The first word of
+     * every N64 ROM is 0x80371240, so which permutation of those four bytes
+     * the file starts with names the order outright -- the extension is never
+     * consulted, and a .z64 that is really a .v64 still loads. */
+    if (buf[0] == 0x37 && buf[1] == 0x80 && buf[2] == 0x40 && buf[3] == 0x12) {
+        long i;
+        for (i = 0; i + 1 < n; i += 2) { uint8_t t = buf[i]; buf[i] = buf[i + 1]; buf[i + 1] = t; }
+        printf("sbk: %s was byte-swapped (.v64); converted to big-endian\n", path);
+    } else if (buf[0] == 0x40 && buf[1] == 0x12 && buf[2] == 0x37 && buf[3] == 0x80) {
+        long i;
+        for (i = 0; i + 3 < n; i += 4) {
+            uint8_t t0 = buf[i], t1 = buf[i + 1];
+            buf[i] = buf[i + 3]; buf[i + 1] = buf[i + 2];
+            buf[i + 2] = t1;     buf[i + 3] = t0;
+        }
+        printf("sbk: %s was word-swapped (.n64); converted to big-endian\n", path);
+    } else if (!(buf[0] == 0x80 && buf[1] == 0x37 && buf[2] == 0x12 && buf[3] == 0x40)) {
+        fprintf(stderr, "sbk: %s is not an N64 ROM image in any byte order\n", path);
         return -1;
     }
     sbk_rom = buf;

@@ -24,6 +24,20 @@ void sbk_ui_text(int x, int y, int scale, const char *s, struct SbkColor c);
 /* Same, with a one-pixel*scale drop shadow: readable over any frame. */
 void sbk_ui_text_shadow(int x, int y, int scale, const char *s, struct SbkColor c);
 void sbk_ui_logo(int x, int y, int w, int h); /* the launcher logo, aspect 16:9 */
+
+/* Install a sprite font pulled out of a game's ROM as the font every piece of
+ * UI text is drawn with: `rgba` is a w*h RGBA8 grid of `cols` columns of
+ * `cell`-sized cells, cell 0 being character `first`.  fold_lower maps 'a' to
+ * 'A', which both games need -- their sheets have no lowercase.  Until this is
+ * called (or when no ROM is present at all) the port's own 5x7 font is used. */
+void sbk_ui_font_set_rom(const unsigned char *rgba, int w, int h, int cols,
+                         int cell, int advance, int first, int fold_lower);
+int sbk_ui_font_is_rom(void);
+
+/* One string in the port's own 5x7 font whatever is installed: file paths,
+ * which have to read exactly as the Finder shows them. */
+void sbk_ui_text_ascii(int x, int y, int scale, const char *s, struct SbkColor c);
+int sbk_ui_text_ascii_w(const char *s, int scale);
 int sbk_ui_text_w(const char *s, int scale);
 int sbk_ui_text_h(int scale);
 

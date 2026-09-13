@@ -22,6 +22,7 @@
 #include "gfx/gfx_rendering_api.h"
 #include "settings.h"
 #include "ui/ui.h"
+#include "rom_scan.h"
 
 extern char sbk_launch_target[1024];
 const char *sbk_settings_res_name(int v);
@@ -71,12 +72,26 @@ static double now_usec(void) {
     return (double)tv.tv_sec * 1000000.0 + (double)tv.tv_usec;
 }
 
+/* The ROM the player's own cartridge dump lives in for the game this
+ * executable is, if the scan found a good one: the shared ROM folder wins over
+ * whatever is in the bundle, and an explicit path on the command line wins
+ * over both (find_rom, below).  Returns NULL when there is nothing to load --
+ * the launcher then comes up anyway and says where to put one. */
+static const char *scanned_rom(void) {
+    const struct SbkRomSlot *s = sbk_rom_slot(sbk_game_self_index());
+    if (s == NULL || s->status != SBK_ROM_OK) return NULL;
+    return s->path;
+}
+
+static int rom_was_explicit;
+
 static const char *find_rom(int argc, char **argv) {
     static char path[1024];
     int i;
     const char *candidates[] = { "snowboardkids.z64", "../Resources/snowboardkids.z64", NULL };
     for (i = 1; i < argc; i++) {
         if (argv[i][0] != '-') {
+            rom_was_explicit = 1;
             return argv[i];
         }
         if (strcmp(argv[i], "--play") == 0 || strcmp(argv[i], "--record") == 0 || strcmp(argv[i], "--drawdistance") == 0 || strcmp(argv[i], "--dumpdl") == 0 || strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--shotat") == 0 || strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--dumpframes") == 0 || strcmp(argv[i], "--pak") == 0 || strcmp(argv[i], "--bigtri") == 0 || strcmp(argv[i], "--peek") == 0 || strcmp(argv[i], "--cmds") == 0 || strcmp(argv[i], "--trial") == 0 || strcmp(argv[i], "--plan") == 0 || strcmp(argv[i], "--saveevery") == 0 || strcmp(argv[i], "--uiscript") == 0 || strcmp(argv[i], "--dumpdlat") == 0) {
@@ -158,6 +173,15 @@ int main(int argc, char **argv) {
     rom = find_rom(argc, argv);
     sbk_settings_scripted = scripted_run(argc, argv);
     sbk_settings_load();
+    sbk_games_probe(argc > 0 ? argv[0] : NULL);
+    if (!sbk_settings_scripted) {
+        /* Bring your own ROM: the shared folder next to the Controller Pak and
+         * settings.txt, any filename, any byte order, identified by SHA-1.  A
+         * scripted run skips all of it and keeps the old path search, so a
+         * golden replay sees exactly the ROM it always saw. */
+        sbk_rom_scan(argc > 0 ? argv[0] : NULL);
+        if (!rom_was_explicit && scanned_rom() != NULL) rom = scanned_rom();
+    }
     int fullscreen = 0; /* 1 = yes, -1 = --windowed, 0 = default (fullscreen when SBK_FULLSCREEN=1 or launched from the Finder) */
     extern int sbk_wide_output;
     extern int sbk_fadein_enabled;
@@ -366,11 +390,13 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (sbk_rom_load(rom) != 0) {
+    if (rom != NULL && sbk_rom_load(rom) != 0) rom = NULL;
+    if (rom == NULL && sbk_settings_scripted) {
         fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide|--widescreen=4:3|16:9] [--fadein[=0|1]] [--msaa=0|2|4] [--texfilter=rdp|point|bilinear] [--start] [--haze[=0|1]] [--hazedbg] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
-    printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
+    if (rom != NULL) printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
+    else printf("sbk: no cartridge dump for this game yet; the launcher will say where to put one\n");
 
     sbk_rdram_init();
     sbk_pin_init();
@@ -398,7 +424,6 @@ int main(int argc, char **argv) {
     }
     sbk_audio_out_init();
 
-    sbk_games_probe(argc > 0 ? argv[0] : NULL);
     {   /* a game remembered from a session where the other bundle existed */
         const struct SbkGameEntry *e = sbk_game_at(sbk_game_index(sbk_settings.game));
         if (e == NULL || !e->installed) {
@@ -463,6 +488,19 @@ int main(int argc, char **argv) {
         }
         printf("sbk: started %s (pid %d)\n", sbk_launch_target, (int)pid);
         return 0;
+    }
+
+    /* The player may have dropped a cartridge dump into the ROM folder while
+     * the launcher was up: the launcher rescanned, so ask again. */
+    if (rom == NULL) {
+        rom = scanned_rom();
+        if (rom == NULL || sbk_rom_load(rom) != 0) {
+            fprintf(stderr, "sbk: no Snowboard Kids cartridge dump in %s\n", sbk_rom_dir());
+            sbk_audio_out_shutdown();
+            SDL_Quit();
+            return 1;
+        }
+        printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
     }
 
     /* Boot: the game creates its boot thread and starts it. */
