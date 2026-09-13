@@ -16,8 +16,7 @@ a fixed-function OpenGL 1.3 backend, scripted input.
 </p>
 
 All captured on the G4 itself (Leopard, Radeon 9000): the launcher and its
-Mode screen,
-a race in Enhanced mode, the same game at the N64's 320x240 with scanlines,
+Mode screen, a race in Enhanced mode, the same game at the N64's 320x240 with scanlines,
 2x with the aperture grille, and the ending credits the self-play campaign
 reached.
 
@@ -37,6 +36,8 @@ reached.
 | Gamepad: SDL game controllers (HID pads) and Xbox One pads over USB via IOKit | done |
 | Rumble Pak: the pad's rumble (Xbox GIP packet or SDL haptic) behind osMotorInit/Start/Stop | done |
 | Front end: settings file, launcher, in-game options overlay, resolution modes, CRT filters | done, `settings.txt` next to the Controller Pak |
+| Front end, second pass: three screens on a sky, the games as 3D boxes, all type and box art read out of the cartridge at run time | done 2026-09-13 |
+| Bring your own ROM: shared folder, any byte order, SHA-1 identification, plain-words errors | done 2026-09-13 |
 
 Scripted input is deterministic: `--play` a text script or a Mupen `.m64`
 movie, `--record` one from a keyboard session, and two runs of the same script
