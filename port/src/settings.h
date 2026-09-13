@@ -38,6 +38,7 @@ struct SbkSettings {
     int volume;          /* 0..100 */
     int launcher;        /* 0/1 -- show the launcher at startup */
     int perf;            /* 0/1 -- --perf overlay/logging */
+    int haze;            /* 0/1 -- Enhanced-mode distance haze (gfx/haze.c) */
 };
 
 extern struct SbkSettings sbk_settings;

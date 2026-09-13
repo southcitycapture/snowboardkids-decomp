@@ -4,6 +4,12 @@
 #
 # Draw distance (--drawdistance N): the race projection's far plane and the
 # camera-distance cull for props/effects scale with sbk_far_scale (port_stubs.c).
-src/engine/viewport_manager.c	        2800.0f,	        2800.0f * sbk_far_scale,
+# configureViewport's 2800 is the race camera, and it also tells the
+# Enhanced-mode distance haze (port/src/gfx/haze.c) where the plane landed --
+# sbk_haze_note_far returns its argument, so the expression is unchanged for
+# the game and the haze gets the one number it cannot work out for itself.
+# The other two are not the race camera: (f32)farClip is
+# configureViewportWithFovAndFarClip, which only the ending credits use.
+src/engine/viewport_manager.c	        2800.0f,	        sbk_haze_note_far(2800.0f * sbk_far_scale),
 src/engine/viewport_manager.c	        (f32)farClip,	        (f32)farClip * sbk_far_scale,
 src/math/spatial_math.c	#define RACE_VIEWPORT_CAMERA_CULL_RANGE 0xBA00000	#define RACE_VIEWPORT_CAMERA_CULL_RANGE ((s32)(0xBA00000 * sbk_far_scale))

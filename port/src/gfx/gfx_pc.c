@@ -19,6 +19,24 @@
 #include "gfx_window_manager_api.h"
 #include "gfx_rendering_api.h"
 #include "gfx_screen_config.h"
+#include "haze.h"
+
+/* --hazedbg counters, read and cleared by sbk_haze_frame(). */
+unsigned sbk_haze_dbg_proj_tris, sbk_haze_dbg_tris;
+float sbk_haze_dbg_max, sbk_haze_dbg_maxdist, sbk_haze_dbg_scale;
+/* --hazedbg: which perspNorm values the frame's projections carried, and how
+ * many triangles each drew.  This is how the race camera was told from the
+ * overlay and menu viewports without a heuristic -- and how a wrong guess
+ * shows itself. */
+unsigned short sbk_haze_dbg_pn[8];
+unsigned sbk_haze_dbg_pn_tris[8];
+static void haze_dbg_note_pn(unsigned short pn) {
+    int i;
+    for (i = 0; i < 8; i++) {
+        if (sbk_haze_dbg_pn[i] == pn) { sbk_haze_dbg_pn_tris[i]++; return; }
+        if (sbk_haze_dbg_pn_tris[i] == 0) { sbk_haze_dbg_pn[i] = pn; sbk_haze_dbg_pn_tris[i] = 1; return; }
+    }
+}
 
 static void gfx_unsupported(const char *what, int line) {
     static int n;
@@ -66,6 +84,7 @@ struct LoadedVertex {
     float u, v;
     struct RGBA color;
     uint8_t clip_rej;
+    float haze;   /* Enhanced-mode distance haze, 0..1. See gfx/haze.c. */
 };
 
 struct TextureHashmapNode {
@@ -111,7 +130,14 @@ static struct RSP {
     
     uint32_t geometry_mode;
     int16_t fog_mul, fog_offset;
-    
+    uint16_t persp_norm;        /* gSPPerspNormalize: 2*65536/(near+far) */
+
+    /* Enhanced-mode distance haze (gfx/haze.c), recomputed whenever the
+     * projection changes: whether this projection is the race camera's, and
+     * the eye-space scale that turns a clip-space w into a world distance. */
+    bool haze_proj;
+    float haze_w_to_dist;
+
     struct {
         // U0.16
         uint16_t s, t;
@@ -170,6 +196,11 @@ static struct RenderingState {
     struct XYWidthHeight viewport, scissor;
     struct ShaderProgram *shader_program;
     struct TextureHashmapNode *textures[2];
+    /* gfx_gl13 takes GL_FOG_COLOR from the first vertex of the batch, so a
+     * batch may only ever hold one fog colour.  sm64-port never noticed
+     * because SM64 keeps one; the haze puts its own colour in the same slot
+     * beside the game's, so the two must not end up in one draw. */
+    float fog_col[3];
 } rendering_state;
 
 struct GfxDimensions gfx_current_dimensions;
@@ -647,6 +678,44 @@ static void gfx_matrix_mul(float res[4][4], const float a[4][4], const float b[4
     memcpy(res, tmp, sizeof(tmp));
 }
 
+/* Enhanced-mode distance haze: decide, once per projection change rather than
+ * once per vertex, whether the matrix now loaded is the race camera's and how
+ * to turn a clip-space w into a world-space eye distance.
+ *
+ * The game loads guPerspective's matrix and then MULs the view rotation and
+ * translation into the same G_MTX_PROJECTION slot, so rsp.P_matrix is a full
+ * view-projection.  The view part is rigid, so the w column's xyz is the
+ * perspective matrix's (0, 0, -scale) turned by the view rotation: its length
+ * is the scale guPerspective was given (1.0 in the sequel, 0.5 in the first
+ * game), and w / scale is the eye distance in the game's own world units --
+ * the units the far plane is written in.
+ *
+ * Which viewport this is comes from gSPPerspNormalize, which is 2*65536 over
+ * (near + far) and therefore names the far plane on its own.  Only the race
+ * camera's projection is hazed; the sky and the HUD hang off viewports whose
+ * far planes --drawdistance does not scale, and they are left exactly alone. */
+static void gfx_haze_projection_changed(void) {
+    float sx, sy, sz, scale;
+    rsp.haze_proj = false;
+    rsp.haze_w_to_dist = 1.0f;
+    if (!sbk_haze_on) {
+        return;
+    }
+    if (sbk_haze_persp_norm != 0 && rsp.persp_norm != 0 &&
+        (int)rsp.persp_norm != sbk_haze_persp_norm) {
+        return;
+    }
+    sx = rsp.P_matrix[0][3];
+    sy = rsp.P_matrix[1][3];
+    sz = rsp.P_matrix[2][3];
+    scale = sqrtf(sx * sx + sy * sy + sz * sz);
+    if (scale < 1e-4f) {
+        return;   /* orthographic: the 2D passes have no distance to speak of */
+    }
+    rsp.haze_w_to_dist = 1.0f / scale;
+    rsp.haze_proj = true;
+}
+
 static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
     float matrix[4][4];
     sbk_last_mtx_addr = addr;
@@ -672,6 +741,7 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
         } else {
             gfx_matrix_mul(rsp.P_matrix, matrix, rsp.P_matrix);
         }
+        gfx_haze_projection_changed();
     } else { // G_MTX_MODELVIEW
         if ((parameters & G_MTX_PUSH) && rsp.modelview_matrix_stack_size < 11) {
             ++rsp.modelview_matrix_stack_size;
@@ -812,6 +882,23 @@ static void gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
             d->color.a = fog_z; // Use alpha variable to store fog factor
         } else {
             d->color.a = v->cn[3];
+        }
+
+        /* Enhanced-mode distance haze.  w is the eye distance (times the
+         * projection's scale), so this is a true world-space ramp and not a
+         * depth-buffer curve: geometry the unmodified game would have drawn
+         * is nearer than sbk_haze_start and comes out bit-for-bit unchanged. */
+        d->haze = 0.0f;
+        if (rsp.haze_proj) {
+            float dist = w * rsp.haze_w_to_dist;
+            if (sbk_haze_debug && dist > sbk_haze_dbg_maxdist) {
+                sbk_haze_dbg_maxdist = dist;
+                sbk_haze_dbg_scale = rsp.haze_w_to_dist;
+            }
+            if (dist > sbk_haze_start) {
+                float f = (dist - sbk_haze_start) * sbk_haze_inv_span;
+                d->haze = f > 1.0f ? 1.0f : f;
+            }
         }
     }
 }
@@ -982,6 +1069,25 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
     
     bool use_alpha = (rdp.other_mode_l & (G_BL_A_MEM << 18)) == 0;
     bool use_fog = (rdp.other_mode_l >> 30) == G_BL_CLR_FOG;
+    bool use_haze;
+    if (sbk_haze_debug) haze_dbg_note_pn(rsp.persp_norm);
+    if (sbk_haze_debug && rsp.haze_proj) {
+        sbk_haze_dbg_proj_tris++;
+        if (v_arr[0]->haze > sbk_haze_dbg_max) sbk_haze_dbg_max = v_arr[0]->haze;
+    }
+    /* The sequel's race viewports DO set a fog blender and a fog position --
+     * gSPFogPosition(0x3E3, 0x3E7), the last half a percent of the depth
+     * range -- so most race geometry arrives here with use_fog already true.
+     * That band is normalised depth, so it stretches with the far plane and
+     * lands nowhere useful once --drawdistance has moved the plane.  The haze
+     * therefore does not stand aside for the game's fog; it takes whichever
+     * of the two is thicker, per vertex.  The colour is the same colour
+     * either way in a race (both come from environmentColors.fog), so this
+     * can only ever add haze, never remove the game's. */
+    use_haze = rsp.haze_proj &&
+               (v_arr[0]->haze > 0.0f || v_arr[1]->haze > 0.0f || v_arr[2]->haze > 0.0f);
+    bool fog_slot = use_fog || use_haze;
+    if (use_haze && sbk_haze_debug) sbk_haze_dbg_tris++;
     bool texture_edge = (rdp.other_mode_l & CVG_X_ALPHA) == CVG_X_ALPHA;
     bool use_noise = (rdp.other_mode_l & G_AC_DITHER) == G_AC_DITHER;
     
@@ -990,7 +1096,7 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
     }
     
     if (use_alpha) cc_id |= SHADER_OPT_ALPHA;
-    if (use_fog) cc_id |= SHADER_OPT_FOG;
+    if (fog_slot) cc_id |= SHADER_OPT_FOG;
     if (texture_edge) cc_id |= SHADER_OPT_TEXTURE_EDGE;
     if (use_noise) cc_id |= SHADER_OPT_NOISE;
     
@@ -1005,6 +1111,25 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
         gfx_rapi->unload_shader(rendering_state.shader_program);
         gfx_rapi->load_shader(prg);
         rendering_state.shader_program = prg;
+    }
+    if (fog_slot) {
+        float fc[3];
+        if (!use_haze) {
+            fc[0] = rdp.fog_color.r / 255.0f;
+            fc[1] = rdp.fog_color.g / 255.0f;
+            fc[2] = rdp.fog_color.b / 255.0f;
+        } else {
+            fc[0] = sbk_haze_color[0];
+            fc[1] = sbk_haze_color[1];
+            fc[2] = sbk_haze_color[2];
+        }
+        if (fc[0] != rendering_state.fog_col[0] || fc[1] != rendering_state.fog_col[1] ||
+            fc[2] != rendering_state.fog_col[2]) {
+            gfx_flush();
+            rendering_state.fog_col[0] = fc[0];
+            rendering_state.fog_col[1] = fc[1];
+            rendering_state.fog_col[2] = fc[2];
+        }
     }
     if (use_alpha != rendering_state.alpha_blend) {
         gfx_flush();
@@ -1142,7 +1267,17 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
             buf_vbo[buf_vbo_len++] = v / tex_height;
         }
         
-        if (use_fog) {
+        if (use_haze) {
+            float f = v_arr[i]->haze;
+            if (use_fog) {
+                float game_f = v_arr[i]->color.a / 255.0f;   /* the game's own */
+                if (game_f > f) f = game_f;
+            }
+            buf_vbo[buf_vbo_len++] = sbk_haze_color[0];
+            buf_vbo[buf_vbo_len++] = sbk_haze_color[1];
+            buf_vbo[buf_vbo_len++] = sbk_haze_color[2];
+            buf_vbo[buf_vbo_len++] = f;
+        } else if (use_fog) {
             buf_vbo[buf_vbo_len++] = rdp.fog_color.r / 255.0f;
             buf_vbo[buf_vbo_len++] = rdp.fog_color.g / 255.0f;
             buf_vbo[buf_vbo_len++] = rdp.fog_color.b / 255.0f;
@@ -1301,6 +1436,14 @@ static void gfx_sp_moveword(uint8_t index, uint16_t offset, uint32_t data) {
             }
             break;
         }
+        case G_MW_PERSPNORM:
+            /* 2*65536/(near+far).  sm64-port ignores this (it is an RSP w
+             * precision register), but it is the only thing in the display
+             * list that names which viewport's projection is about to be
+             * loaded, which is how the haze tells the race camera from the
+             * overlay and menu passes. */
+            rsp.persp_norm = (uint16_t)data;
+            break;
         case G_MW_FOG:
             rsp.fog_mul = (int16_t)(data >> 16);
             rsp.fog_offset = (int16_t)data;
@@ -2027,6 +2170,10 @@ static void gfx_sp_reset() {
     rsp.modelview_matrix_stack_size = 1;
     rsp.current_num_lights = 2;
     rsp.lights_changed = true;
+    /* A display list that never loads a projection inherits nothing: the haze
+     * is off until a gSPPerspNormalize + projection says otherwise. */
+    rsp.persp_norm = 0;
+    rsp.haze_proj = false;
 }
 
 void gfx_get_dimensions(uint32_t *width, uint32_t *height) {

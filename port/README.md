@@ -75,10 +75,11 @@ Controller Pak) is a plain `key=value` file:
     filter=none|scanlines|grille|smooth
     widescreen=0|1     fullscreen=0|1     vsync=0|1
     volume=0..100      launcher=0|1       perf=0|1
+    haze=0|1
 
 It is read before the command line is parsed, so **every flag still wins for
-its own run**: `--drawdistance`, `--wide`, `--windowed`, `--perf` and the new
-`--mode=`, `--resolution=`, `--filter=`, `--volume=` all override the file
+its own run**: `--drawdistance`, `--wide`, `--windowed`, `--perf`, `--haze[=0|1]` and the
+new `--mode=`, `--resolution=`, `--filter=`, `--volume=` all override the file
 without writing to it. The launcher and the overlay write it whenever
 something changes.
 
@@ -90,8 +91,8 @@ page with the individual settings, **Start** and **Quit**. Arrows or the
 stick move, Enter or A selects, left/right change a value, Esc or B backs out
 and quits from the top page.
 
-* **Original** = draw distance 1, `n64` resolution, no filter, 4:3.
-* **Enhanced** = draw distance 4, `native` resolution, `smooth`, 4:3.
+* **Original** = draw distance 1, `n64` resolution, no filter, 4:3, no haze.
+* **Enhanced** = draw distance 2, `native` resolution, no filter, 4:3, **haze on**.
 * Touching any single setting moves Mode to **CUSTOM** rather than lying.
 
 **The overlay** is the same Options page over the running game: **F1** or the
@@ -99,7 +100,8 @@ pad's **View** button opens and closes it (View no longer doubles as Start).
 It is drawn over the left letterbox bar where one is wide enough and
 translucently over the frame otherwise; the game keeps running underneath
 with its controller reading as idle, and draw distance, resolution, filter,
-widescreen, vsync, volume and the perf readout all apply live.
+widescreen, vsync, volume, the distance haze and the perf readout all apply
+live.
 
 **Resolution modes** render the frame into a 320x240 (`n64`) or 640x480
 (`2x`) viewport, copy it into a power-of-two texture with
@@ -376,6 +378,57 @@ port changes game code: `port/patches.txt` lists exact-text substitutions
 that `tools/mirror_src.py` applies to the mirrored copies at build time
 (upstream files are never touched), turning the two constants into
 `constant * sbk_far_scale`. Cost at 4x on the G4: about +0.1 ms per frame.
+
+### Distance haze
+
+The extra range is honest geometry, and that is the problem: the N64 clipped
+it, so nobody ever made it look like anything. At `--drawdistance 4` a band of
+far terrain stands across the sky, hard-edged and fully lit, with clouds
+behind it.
+
+`haze=1` (on in **Enhanced**, off in **Original**, `--haze=0|1` for one run)
+fades that band into the course's own air. It is not a post-process and not a
+shader: F3DEX already carries a per-vertex fog factor, gfx_pc already computes
+one for `G_FOG` geometry and `gfx_gl13.c` already hands it to `GL_FOG` as a
+per-vertex fog coordinate, which the Radeon 9000 does in fixed function for
+nothing. `port/src/gfx/haze.c` fills that same slot in for race geometry the
+game did not fog far enough out, and where the game has its own factor for a
+vertex the **thicker of the two wins** -- the haze can only add, never take
+the game's fog away.
+
+* **Distance** is exact, not estimated. The projection is `guPerspective(...,
+  scale = 0.5f)` MUL'd with the view matrices into the same `G_MTX_PROJECTION`
+  slot, so a vertex's clip-space *w* is its eye distance times that scale;
+  gfx_pc recovers the scale as the length of the matrix's w column, which is
+  why the first game's 0.5 and the sequel's 1.0 need no special case.
+* **Which viewport** comes from `gSPPerspNormalize`, which is
+  `2*65536/(near+far)` and so names the far plane on its own. Only the race
+  camera is hazed; the overlay passes (a flat 15000), the menu viewport
+  (10000) and Silver Mountain's own race viewport (1000) carry different
+  integers and are left alone. `port/patches.txt` tells the port what the race
+  far plane came out as; everything else is read off the display list.
+* **Colour** is the game's own: `gFadeColorRed/Green/Blue`, set once per
+  course by `setBootFadeColor` / `setTitleFadeColor` at the end of each case of
+  `initRaceCourseSceneTasks` and fed straight to `gDPSetFogColor` by
+  `appendFadeOverlayDisplayList`. It is authored per course and per time of
+  day -- `80 C0 FF` for Big Snowman's sky, `FF 80 00` for Sunset Rock,
+  `00 00 32` and `00 00 40` for the two night courses, `F0 E6 BE` for
+  Quicksand Valley, `20 40 50` for Rookie Mountain's dusk -- so there is no
+  table of the port's own and no guessing at the backdrop.
+* **Range** runs from 0.85x the far plane the *unmodified* game clipped at to
+  2x that distance, capped at the extended plane. Anchoring it to the old
+  horizon rather than the new one is the whole trick: the geometry
+  `--drawdistance` adds is a band sitting just past where the N64 clipped, not
+  something spread over the new range, so a ramp that only reached full haze at
+  the new far plane was a few per cent thick exactly where it was needed.
+  Nothing the N64 itself drew moves by more than 6%.
+* **Props** stop popping for free: the cull range scales with `sbk_far_scale`
+  too, so anything appearing at the edge of it appears already deep in haze.
+
+`--hazedbg` prints a line a second: the course, the colour, the range, the
+perspNorm the race camera carried against every other perspNorm in the frame,
+how many triangles were tinted and the farthest vertex seen. Scripted and
+golden runs force it off, like the filters.
 
 ## Fullscreen
 

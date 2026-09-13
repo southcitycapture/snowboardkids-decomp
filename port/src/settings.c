@@ -136,6 +136,7 @@ void sbk_settings_defaults(void) {
     sbk_settings.volume = 100;
     sbk_settings.launcher = 1;
     sbk_settings.perf = 0;
+    sbk_settings.haze = 0;
 }
 
 void sbk_settings_apply_mode(int mode) {
@@ -145,11 +146,13 @@ void sbk_settings_apply_mode(int mode) {
         sbk_settings.resolution = SBK_RES_NATIVE;
         sbk_settings.filter = SBK_FILTER_NONE;
         sbk_settings.widescreen = 0;
+        sbk_settings.haze = 1;
     } else if (mode == SBK_MODE_ORIGINAL) {
         sbk_settings.draw_distance = 1;
         sbk_settings.resolution = SBK_RES_N64;
         sbk_settings.filter = SBK_FILTER_NONE;
         sbk_settings.widescreen = 0;
+        sbk_settings.haze = 0;
     }
 }
 
@@ -171,9 +174,11 @@ void sbk_settings_player_defaults(void) {
  * knob on the Options page moves the Mode line to CUSTOM rather than lying. */
 int sbk_settings_derive_mode(void) {
     if (sbk_settings.draw_distance == 2 && sbk_settings.resolution == SBK_RES_NATIVE &&
-        sbk_settings.filter == SBK_FILTER_NONE && !sbk_settings.widescreen) return SBK_MODE_ENHANCED;
+        sbk_settings.filter == SBK_FILTER_NONE && !sbk_settings.widescreen &&
+        sbk_settings.haze) return SBK_MODE_ENHANCED;
     if (sbk_settings.draw_distance == 1 && sbk_settings.resolution == SBK_RES_N64 &&
-        sbk_settings.filter == SBK_FILTER_NONE && !sbk_settings.widescreen) return SBK_MODE_ORIGINAL;
+        sbk_settings.filter == SBK_FILTER_NONE && !sbk_settings.widescreen &&
+        !sbk_settings.haze) return SBK_MODE_ORIGINAL;
     return SBK_MODE_CUSTOM;
 }
 
@@ -233,6 +238,7 @@ void sbk_settings_load(void) {
         else if (strcmp(key, "volume") == 0) sbk_settings.volume = clampi(atoi(val), 0, 100);
         else if (strcmp(key, "launcher") == 0) sbk_settings.launcher = atoi(val) != 0;
         else if (strcmp(key, "perf") == 0) sbk_settings.perf = atoi(val) != 0;
+        else if (strcmp(key, "haze") == 0) sbk_settings.haze = atoi(val) != 0;
     }
     fclose(f);
     sbk_settings_loaded = 1;
@@ -260,6 +266,7 @@ void sbk_settings_save(void) {
     fprintf(f, "volume=%d\n", sbk_settings.volume);
     fprintf(f, "launcher=%d\n", sbk_settings.launcher);
     fprintf(f, "perf=%d\n", sbk_settings.perf);
+    fprintf(f, "haze=%d\n", sbk_settings.haze);
     fclose(f);
 }
 
@@ -268,6 +275,7 @@ void sbk_settings_save(void) {
 extern float sbk_far_scale;
 extern int sbk_wide_output;
 extern int sbk_perf_enabled;
+extern int sbk_haze_enabled;          /* gfx/haze.c */
 void sbk_audio_out_set_volume(int percent);
 void gfx_gl13_set_render_scale(int mode);      /* gfx_gl13.c */
 void gfx_gl13_set_filter(int filter);
@@ -279,11 +287,13 @@ void sbk_settings_apply(void) {
     if (sbk_far_scale < 0.25f) sbk_far_scale = 0.25f;
     sbk_perf_enabled = sbk_settings.perf;
     sbk_audio_out_set_volume(sbk_settings.volume);
+    sbk_haze_enabled = sbk_settings.haze;
     if (sbk_settings_scripted && !sbk_settings_forced) {
         /* No post-processing at all under a script: a golden replay must see
          * exactly the pixels it was recorded against. */
         gfx_gl13_set_render_scale(SBK_RES_NATIVE);
         gfx_gl13_set_filter(SBK_FILTER_NONE);
+        sbk_haze_enabled = 0;   /* a golden replay sees the pixels it was cut against */
         return;
     }
     if (sbk_wide_output != sbk_settings.widescreen) {

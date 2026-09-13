@@ -57,6 +57,7 @@ static int ui_fullscreen_shadow;   /* the toggle's backing int */
 static struct UiItem options_items[] = {
     { "Mode",          IT_CHOICE, &sbk_settings.mode,          0, 1, 1, mode_names,   0, -1 },
     { "Draw distance", IT_RANGE,  &sbk_settings.draw_distance, 1, 4, 1, NULL,         0, -1 },
+    { "Distance haze", IT_TOGGLE, &sbk_settings.haze,          0, 1, 1, off_on,       0, -1 },
     { "Resolution",    IT_CHOICE, &sbk_settings.resolution,    0, 2, 1, res_names,    0, -1 },
     { "Filter",        IT_CHOICE, &sbk_settings.filter,        0, 3, 1, filter_names, 0, -1 },
     { "Widescreen",    IT_TOGGLE, &sbk_settings.widescreen,    0, 1, 1, off_on,       0, -1 },

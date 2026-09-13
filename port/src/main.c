@@ -37,6 +37,8 @@ extern int sbk_audio_disabled;
 extern int sbk_race_debug_enabled;
 int sbk_pak_open(const char *path);
 extern float sbk_far_scale;
+extern int sbk_haze_enabled;      /* gfx/haze.c: the Enhanced-mode distance haze */
+void sbk_haze_frame(void);
 #include "debug/perf.h"
 int sbk_peek_add(const char *spec);
 extern int sbk_autoplay, sbk_soak, sbk_nightmare, sbk_dumpon;
@@ -175,6 +177,7 @@ int main(int argc, char **argv) {
         sbk_wide_output = sbk_settings.widescreen;
         if (sbk_settings.fullscreen) fullscreen = 1;
         sbk_perf_enabled = sbk_settings.perf;
+        sbk_haze_enabled = sbk_settings.haze;
     }
 
     for (i = 1; i < argc; i++) {
@@ -221,6 +224,15 @@ int main(int argc, char **argv) {
                                   strcmp(v, "grille") == 0 ? SBK_FILTER_GRILLE :
                                   strcmp(v, "smooth") == 0 ? SBK_FILTER_SMOOTH : SBK_FILTER_NONE;
             sbk_settings_forced = 1;
+        } else if (strcmp(argv[i], "--haze") == 0 || strncmp(argv[i], "--haze=", 7) == 0) {
+            sbk_settings.haze = argv[i][6] == '=' ? atoi(argv[i] + 7) != 0 : 1;
+            sbk_settings_forced = 1;
+        } else if (strcmp(argv[i], "--nohaze") == 0) {
+            sbk_settings.haze = 0;
+            sbk_settings_forced = 1;
+        } else if (strcmp(argv[i], "--hazedbg") == 0) {
+            extern int sbk_haze_debug;
+            sbk_haze_debug = 1;
         } else if (strncmp(argv[i], "--mode=", 7) == 0) {
             sbk_settings_apply_mode(strcmp(argv[i] + 7, "enhanced") == 0 ? SBK_MODE_ENHANCED : SBK_MODE_ORIGINAL);
             sbk_settings_forced = 1;
@@ -325,7 +337,7 @@ int main(int argc, char **argv) {
     }
 
     if (sbk_rom_load(rom) != 0) {
-        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--start] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
+        fprintf(stderr, "usage: %s [--fullscreen[=WxH]|--fullscreen-desktop|--windowed] [--wide] [--start] [--haze[=0|1]] [--hazedbg] [--novsync] [--trace] [--play SCRIPT|MOVIE.m64] [--record MOVIE.m64] [--frames N] [--hashframe] [--perf] [--autoplay] [--soak] [--nightmare] [--trial SPEC] [--plan C:CH:B:BO,..] [--pak FILE|--nopak] [--nopad] [--status] [--coursetrace] [--turbo] [--headless] [--mute] [--wav OUT.wav] [snowboardkids.z64]\n", argv[0]);
         return 1;
     }
     printf("sbk: ROM %s (%lu bytes)\n", rom, (unsigned long)sbk_rom_size);
@@ -379,7 +391,7 @@ int main(int argc, char **argv) {
      * not, and LaunchServices is not in the way on Leopard. */
     if (sbk_launch_target[0] != '\0') {
         char dd[32], vol[32], res[32], filt[32];
-        char *args[10];
+        char *args[12];
         int n = 0;
         pid_t pid;
         snprintf(dd, sizeof(dd), "--drawdistance");
@@ -396,6 +408,7 @@ int main(int argc, char **argv) {
             args[n++] = res;
             args[n++] = filt;
             args[n++] = vol;
+            args[n++] = sbk_settings.haze ? (char *)"--haze=1" : (char *)"--haze=0";
             args[n++] = sbk_settings.fullscreen ? (char *)"--fullscreen" : (char *)"--windowed";
             args[n] = NULL;
         }
@@ -477,6 +490,9 @@ int main(int argc, char **argv) {
             sbk_dump_tasks_left = sbk_dumpdlat_tasks;
         }
         sbk_perf_frame();
+        /* The haze's gate and colour, once a retrace: is a race on screen,
+         * and what colour is this course's air. */
+        sbk_haze_frame();
         sbk_autoplay_tick(retraces);
         if (sbk_perf_enabled && retraces % 60 == 0) {
             sbk_perf_report();
