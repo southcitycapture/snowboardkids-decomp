@@ -672,3 +672,167 @@ Anti-aliasing costs the CPU nothing, which is what it should cost: the
 multisampling is the Radeon's work and the port builds the same display list.
 Widescreen costs a quarter more triangles and 0.37 ms, which is the field of
 view and not an overhead.
+
+## The launcher, and bringing your own ROM, 2026-09-13
+
+The front end was correct and looked like a debug menu: a list of rows on a
+black field, in a font the port drew itself. The rewrite is three screens on a
+sky, with the two games as N64 boxes, and the rule that decided almost every
+question in it was **take the style from the games rather than imitate it**.
+
+### Why the art comes out of the ROM at run time
+
+Two reasons, and the second is the interesting one.
+
+The first is licence: the games' fonts and logos are theirs. Baking a PNG of
+either into `port/resources/` would put their art in this repository, which is
+exactly what the rest of the port is careful not to do.
+
+The second is that **reading it out of the cartridge cannot drift**. A hand-
+copied font is a claim that it looks like the game; the game's own sheet *is*
+the game. The same goes for the title logos on the box fronts: a person
+redrawing "Snowboard Kids 2" at 320x96 would be making a hundred small
+decisions the original already made.
+
+The cost is two decompressors in the port layer, because the two games use
+different ones and **either bundle draws both boxes**, so each has to read the
+other's ROM. `src/engine/asset_manager.c` in the first game would have linked
+straight in -- it is already plain C -- but it is the *first game's* code, it
+works through `gHuffmanNodes` in emulated RDRAM, and the sequel's port does
+not have it at all. `port/src/ui/rom_codec.c` is a standalone version of both:
+
+* The first game: a symbol-weight table, a Huffman tree rebuilt from it, then
+  either plain symbols (`flags == 0`) or pairs of symbols read as an LZ token
+  stream -- 0 means "the next symbol is a literal", anything else is a copy
+  length in the high nibble and a 12-bit back distance. The header is a
+  big-endian decompressed size, a flags byte, and the payload at +5.
+* The sequel: two bytes at a time, `00 xx` a literal and everything else a
+  4-bit length with a 12-bit distance. No header at all, so the size has to
+  be supplied -- it is the constant the game itself passes to
+  `loadCompressedData`.
+
+Both were checked against the repositories' own extractions before a line of
+UI was written: the first game's font sheet comes out byte-identical to
+`assets/sprites/2427d0/.../image_0198.png`, and both title logos render.
+
+### What the two games turned out to have in common
+
+Enough that the launcher needed one decoder each, not two:
+
+* **The fonts.** Both games keep a 64x64 CI4 sheet of 8x8 cells indexed by
+  `ascii - 0x20`, with sixteen-colour palettes and palette 0 white. They are
+  not the same typeface pixel for pixel, but they are the same *shape of
+  asset*, which is what the code cares about.
+* **The logos.** Both are a 10x8 grid of 32x32 CI8 tiles with one 256-colour
+  palette, a 1-based texture index and 0 meaning "nothing here". They differ
+  only in which cells carry the picture -- the first game's is in the top
+  left, the sequel's spans rows 1 to 3 -- so the decoder builds the whole
+  320x256 canvas and crops to the non-transparent bounding box instead of
+  being told where to look. That is why adding a third game would need no new
+  case.
+
+Each game *also* has a bigger, better-looking proportional font (`_593D10`
+and `font_main`), and those were left alone on purpose: they are indexed by
+each game's own charmap, not by ASCII, with different glyph sizes, different
+control codes and different per-string width tables. Two incompatible text
+layout engines in a launcher is the wrong trade for slightly rounder letters.
+
+### The glyphs are kept in colour
+
+The obvious thing to do with a font sheet is flatten it to an alpha mask and
+tint it. That throws away what makes it look like the game: these glyphs are
+white with a black outline, and an alpha mask turns the outline into a hole.
+Uploading RGBA and drawing with `GL_MODULATE` means the white body takes the
+row's colour and the black outline stays black -- a selected row comes out
+gold-on-black exactly as the games' own menus do. The cost is a 64x64 RGBA
+texture instead of a 64x64 alpha one: 12 KB.
+
+### Everything else is generated
+
+No cloud sprites were hunted for. One 64x64 alpha blob with a smoothstepped
+radial falloff is every cloud (four of them, flattened and overlapped) and
+every snowflake (one, small) and every box's ground shadow, which keeps the
+whole backdrop at one texture and makes it resolution-independent. The sky is
+two gradient quads. The boxes are six quads each at 1 : 1.4 : 0.15, lit by one
+directional light with `GL_COLOR_MATERIAL`, which is worth using here for the
+same reason it is not used in the game: this is the port's own scene, so there
+is nothing to be faithful to.
+
+Two things worth writing down because the first attempt got them wrong:
+
+* **The shadow quads lie in the ground plane and are seen from above**, so
+  they need `GL_CULL_FACE` off. With culling still on from the boxes they
+  vanish and the boxes look like they are floating -- which is exactly how the
+  first build looked.
+* **A panel screen cannot simply stop drawing the boxes.** Pushing them back
+  behind a 90%-opaque panel leaves a ghost of "POWERPC EDITION" showing
+  through it. The fix is to repaint the *sky gradient itself* over them at
+  rising alpha, so the boxes cross-fade into the sky rather than into a flat
+  wash, and the clouds and snow are drawn afterwards so they are never veiled.
+
+### Sounds: not done, and why
+
+The brief asked for the games' menu move/confirm/back effects. They are
+sequenced by each game's own sound driver out of banks the audio thread loads
+during boot, and the launcher runs before any of that exists. Getting one
+click out of it would mean standing up the audio subsystem, the sequence
+player and the sample banks with no game to drive them -- a second, fake game,
+running only to make a noise. The launcher is silent instead. Synthesising a
+blip of the port's own was considered and rejected: the brief was the games'
+sounds, and a made-up one is a worse answer than none.
+
+### Bring your own ROM
+
+The port has always loaded a ROM sitting in the bundle's Resources. That is
+fine for the machine it was built on and useless as a thing to hand somebody.
+
+The folder is `~/Library/Application Support/SnowboardKids/ROMs`, next to the
+Controller Pak and `settings.txt`, and **both bundles read it** -- which is
+what makes the shared launcher honest: one game's front door can show the
+other's box art because it can read the other's cartridge.
+
+Decisions worth keeping:
+
+* **Byte order is read, not assumed.** Every N64 ROM's first word is
+  `0x80371240`; which permutation of those four bytes a file starts with names
+  its order. The extension is never consulted, so a `.v64` misnamed `.z64`
+  loads. `os_pi.c` converts in place at load; `rom_scan.c` converts a copy to
+  hash it, and `sbk_rom_read_at` converts a *window* so the launcher can read
+  a 14 KB logo out of a 16 MB sibling ROM without loading it.
+* **Identity is the header, correctness is the hash.** The cartridge id at
+  `0x3C` says which game a file claims to be, so a file that is neither game
+  can be ignored silently while a file that *is* one of them gets a real
+  answer. The SHA-1 then says whether it is the right dump -- and the two
+  reference hashes are what each decompilation's own matching build produces,
+  so they are not somebody's release, they are the bytes this port was built
+  against.
+* **Wrong is not the same as missing.** The country code turns "nothing
+  happens" into "this is the Japanese cartridge; the port needs the USA one",
+  and a hash mismatch on a USA file into "this file is damaged". Those are the
+  two things that actually go wrong for a person with a cartridge and a dumper.
+* **Better news beats worse.** Slots are filled by rank -- a good dump over a
+  wrong region over a damaged file -- so one bad file in the folder cannot
+  hide a good one next to it.
+* **The hash is cached.** 8 MB is about 0.2 s on this machine and 16 MB twice
+  that; paying it at every launch would be a visible stall before the launcher
+  appeared. `.rom-hashes` in the folder keys on path, size and mtime.
+* **The launcher comes up with no ROM at all.** `sbk_rom_load` is no longer
+  fatal: if this game has no dump, the port carries on to the launcher, which
+  says where to put one and offers to open the folder, rescans when that panel
+  closes, and loads the ROM after the launcher returns. Without this the whole
+  feature would be unreachable -- a person with no ROM would only ever see a
+  line on a terminal they never opened.
+* **Scripted runs see none of it.** `--play`, `--record`, `--headless` and
+  `--nolauncher` skip the scan and keep the old path search, so the goldens are
+  untouched by any of this. `regress` passed 8/8 after the change.
+
+### Cost
+
+`--perf` now gets a line from the launcher itself:
+
+    sbk-launcher: 60.0 Hz  draw 0.80 ms  frame 15.50 ms
+
+0.75-0.92 ms of draw, windowed at 640x480 and fullscreen at 1680x1050 alike,
+against the ~2.5 ms a race costs on the same machine. The fill is on the
+Radeon and the geometry is a few hundred quads, so the window size barely
+moves the CPU number.

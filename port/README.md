@@ -7,15 +7,16 @@ replacement, an interpreter for the display lists and the audio command lists,
 a fixed-function OpenGL 1.3 backend, scripted input.
 
 <p align="center">
-  <img src="docs/screenshots/launcher.png" width="49%" alt="Launcher">
-  <img src="docs/screenshots/options.png" width="49%" alt="Options">
+  <img src="docs/screenshots/launcher.png" width="49%" alt="The launcher: two N64 boxes on a snow shelf">
+  <img src="docs/screenshots/launcher-mode.png" width="49%" alt="The Mode screen">
   <img src="docs/screenshots/race-native.png" width="49%" alt="Race at native resolution, 4x draw distance">
   <img src="docs/screenshots/race-n64-scanlines.png" width="49%" alt="Race at 320x240 with scanlines">
   <img src="docs/screenshots/race-2x-grille.png" width="49%" alt="Race at 2x with the grille mask">
   <img src="docs/screenshots/ending-credits.png" width="49%" alt="Ending credits, reached by the self-play campaign">
 </p>
 
-All captured on the G4 itself (Leopard, Radeon 9000): launcher and options,
+All captured on the G4 itself (Leopard, Radeon 9000): the launcher and its
+Mode screen,
 a race in Enhanced mode, the same game at the N64's 320x240 with scanlines,
 2x with the aperture grille, and the ending credits the self-play campaign
 reached.
@@ -65,9 +66,73 @@ Scripts in `scripts/`: `title-start.txt`, `menu-walk.txt` (to mode select),
 (the same, then taps A with the stick forward), `pak-save.txt`. `--cmds FILE`
 appends script lines dropped into FILE at runtime, for driving menus step by step.
 
-## Launcher and options
+## The launcher
 
-<img src="docs/screenshots/overlay-scanlines.png" width="60%" alt="The in-game overlay, N64 resolution and scanlines applied live">
+<p align="center">
+  <img src="docs/screenshots/launcher.png" width="49%" alt="Pick a game">
+  <img src="docs/screenshots/launcher-mode.png" width="49%" alt="Mode">
+  <img src="docs/screenshots/options.png" width="49%" alt="Options">
+  <img src="docs/screenshots/overlay.png" width="49%" alt="The same options over the running game">
+</p>
+
+Three screens and no more, on a Sunny Mountain sky with drifting clouds and
+light snowfall:
+
+* **Pick a game** -- the two games as N64 boxes on a snow shelf, the selected
+  one lifted and slowly turning toward you, the other back and dimmer. Under
+  them, the game's name and whether its cartridge dump is in the ROM folder;
+  along the bottom, what pressing A would start and in which mode.
+* **Mode** -- Original / Enhanced / Custom, each with a line saying what it
+  is, then **Tweak** into the options and **Start**.
+* **Options** -- the individual settings, one row each, left/right to change,
+  plus Restore defaults, Quit and Back.
+
+Arrows or the stick move, Enter or A selects, Esc or B goes back and quits
+from the first screen. The transitions are a fade and a small slide, 160 ms;
+nothing in the launcher is slower than 200 ms.
+
+**Everything written on it is the game's own sprite font, and the picture on
+each box front is the game's own title logo** -- both read out of whichever
+cartridge dump the player owns, at run time. Nothing of the games' art is in
+this repository: `port/src/ui/ui_rom_art.c` names the ROM offsets, and
+`port/src/ui/rom_codec.c` carries both decompressors, because either bundle
+draws both boxes and so has to read the sibling's ROM as well as its own.
+
+| | first game | the sequel |
+| --- | --- | --- |
+| font sheet | `_2427D0` at ROM `0x2427D0` | `FONT_DATA_TABLE` at `0x215D70` |
+| title logo | `_5DCBE0` at ROM `0x5DCBE0` | `titleLogo` at `0x414CF0` |
+| compression | Huffman then LZ (`src/engine/asset_manager.c`) | two-byte token LZ ("Sno") |
+
+Both fonts turn out to be the same shape -- a 64x64 CI4 sheet of 8x8 cells
+indexed by `ascii - 0x20`, sixteen-colour palettes, palette 0 white -- so one
+decoder serves both and the launcher simply writes with whichever cartridge
+is present. The glyphs are kept in colour rather than flattened to a mask:
+they are white with a black outline, so multiplying by the row's colour tints
+the letter and leaves the outline dark, which is what the games' own menus
+look like. Both title logos are the same shape too (a 10x8 grid of 32x32 CI8
+tiles with one 256-colour palette), differing only in which cells carry the
+picture, so the decoder crops to what was actually drawn rather than being
+told where to look.
+
+With no ROM at all, the port's own 5x7 font and a generated box front spell
+the whole thing out instead, and every screen still works.
+
+The rest is generated in code: the sky is a gradient, the clouds and the
+snowflakes are one 64x64 soft blob drawn at different sizes, and a box is six
+quads at the proportions of a real N64 box (1 : 1.4 : 0.15), lit with
+`GL_LIGHT0` and standing on its own soft shadow. **If you would rather draw
+your own box fronts**, `port/resources/box-sbk1.png` and `box-sbk2.png` (any
+size) are picked up by `port/tools/gen_box.py` and used in place of the title
+logo; until one exists the front is composed from the logo, the game's colour
+and a "POWERPC EDITION" band.
+
+**No menu sounds.** The games' move/confirm/back effects are sequenced by the
+game's own sound driver out of banks the audio thread loads after boot, and
+the launcher runs before any of that exists -- booting the audio subsystem
+without the game to drive it would be a second, fake game just to make a
+click. The port makes no sound of its own on the launcher rather than
+inventing one that is not theirs.
 
 `~/Library/Application Support/SnowboardKids/settings.txt` (next to the
 Controller Pak) is a plain `key=value` file:
@@ -89,14 +154,6 @@ its own run**: `--drawdistance`, `--wide`, `--windowed`, `--perf`, `--haze[=0|1]
 new `--mode=`, `--resolution=`, `--filter=`, `--volume=` all override the file
 without writing to it. The launcher and the overlay write it whenever
 something changes.
-
-**The launcher** runs on the created window before the game boots: a game
-list (Snowboard Kids, plus Snowboard Kids 2 greyed out as *not installed*
-until its ROM appears next to the first -- the table in `src/settings.c` is
-where a second game registers), **Mode** Original / Enhanced, an **Options**
-page with the individual settings, **Start** and **Quit**. Arrows or the
-stick move, Enter or A selects, left/right change a value, Esc or B backs out
-and quits from the top page.
 
 * **Original** = draw distance 1, `n64` resolution, no filter, no haze, no
   fade-in, no anti-aliasing, `texfilter=rdp`, 4:3.
@@ -150,12 +207,91 @@ a second), one token every eight ticks. It exists because synthetic key
 events from `osascript` do not reach a fullscreen SDL window over SSH, which
 is the only way the G4 is driven; every screenshot below was taken with it.
 
-The font is generated: `port/tools/gen_font.py` keeps 128 glyphs as hand-drawn
-5x7 pictures and writes `port/src/ui/ui_font.h`; the UI uploads it once as a
-128x128 `GL_ALPHA` texture and draws everything as immediate-mode quads
-(`port/src/ui/ui_gl.c`). `sbk_ui_begin()` pushes the whole GL state the game
+The fallback font is generated: `port/tools/gen_font.py` keeps 128 glyphs as
+hand-drawn 5x7 pictures and writes `port/src/ui/ui_font.h`. It is what the
+launcher writes with when no ROM has been found yet, and it stays in use for
+the three little arrow and bullet pictures (codes 1, 2 and 3, which no
+cartridge has) and for **file paths**, because the games' sheets have no
+lowercase and a path shouted in capitals reads like a different path from the
+one the Finder shows. Everything is drawn as immediate-mode quads
+(`port/src/ui/ui_gl.c`): `sbk_ui_begin()` pushes the whole GL state the game
 left behind and `sbk_ui_end()` pops it, so gfx_pc's own state cache stays
-valid and needs no invalidation.
+valid and needs no invalidation. The 3D pass saves and restores the
+projection itself, inside that same push.
+
+### What it costs
+
+Measured on the G4 with `--perf`, which the launcher now answers with a line
+of its own a second:
+
+    sbk-launcher: 60.0 Hz  draw 0.80 ms  frame 15.50 ms
+
+0.75-0.92 ms of draw per frame, windowed at 640x480 and fullscreen at
+1680x1050 alike, against the ~2.5 ms a race costs. The launcher does not cost
+more than the game.
+
+## Bring your own ROM
+
+<p align="center">
+  <img src="docs/screenshots/launcher-missing.png" width="49%" alt="A game with no cartridge: a grey, unlit box">
+  <img src="docs/screenshots/launcher-norom.png" width="49%" alt="Where to put one">
+  <img src="docs/screenshots/launcher-wrong-region.png" width="49%" alt="The Japanese cartridge, named as such">
+</p>
+
+Both bundles share one folder for the player's cartridge dumps, next to the
+Controller Pak and `settings.txt`:
+
+    ~/Library/Application Support/SnowboardKids/ROMs/
+
+**Any filename**, and any of the three byte orders a dump gets saved in. The
+order is read off the first four bytes -- every N64 ROM starts with the word
+`0x80371240`, so which permutation of those bytes a file begins with names its
+order outright -- and `.v64` (byte-swapped) and `.n64` (word-swapped) images
+are converted to big-endian as they load. The extension is never consulted, so
+a `.z64` that is really a `.v64` still works.
+
+**Which game a file is** comes from the ROM header's own cartridge id (`SK`
+for the first game, `K2` for the sequel) at offset `0x3C`, and **whether it is
+the right one** from its SHA-1:
+
+| game | SHA-1 of the USA dump | size |
+| --- | --- | --- |
+| Snowboard Kids | `1583bacc9046a360df8ea4d536942155247e154c` | 8 MB |
+| Snowboard Kids 2 | `5ce896fd64276948bc2b8cccd8cd51c25a9f32aa` | 16 MB |
+
+Those are not hashes of somebody's release: they are what each
+decompilation's *own matching build* produces, so "the ROM this port was
+built against" and "the retail USA cartridge" are demonstrably the same bytes.
+
+A file that is neither game is ignored. A file that is the right game says so
+in plain words rather than failing to boot:
+
+* the wrong region -- *"this is the Japanese cartridge; the port needs the USA
+  one"*, with the region read from the header's country code;
+* a bad dump -- *"this file is damaged; the port needs a clean USA dump"*.
+
+With nothing at all for a game, its box is **grey and unlit** with a small
+*no cartridge* label, and choosing it brings up the folder path and an **Open
+folder** action (`open(1)`, so the Finder shows it). Leaving that panel
+rescans, so dropping a file in and coming back lights the box up without
+restarting. Both bundles read the same folder, which is how one game's
+launcher can show the other's box art -- and the cross-launch to the sibling
+bundle then works from either front door.
+
+The bundle's own `Contents/Resources` ROM is still a valid location and is
+scanned **last**, so a personal build in the shared folder wins over the copy
+the bundle shipped with. Better news always beats worse: a good dump beats a
+wrong region beats a damaged file, so one bad file in the folder never hides a
+good one.
+
+An 8 MB SHA-1 is about a fifth of a second on this machine and a 16 MB one
+twice that, which would be a visible pause before every launch, so the results
+are cached by path, size and mtime in `.rom-hashes` in the folder. Touch a
+file and it is hashed again.
+
+A **scripted** run (`--play`, `--record`, `--headless`, `--nolauncher`) skips
+the scan entirely and keeps the old path search, so a golden replay sees
+exactly the ROM it always saw.
 
 ## Letting it play itself
 

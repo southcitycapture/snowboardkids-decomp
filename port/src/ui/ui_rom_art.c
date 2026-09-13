@@ -7,6 +7,7 @@
 #include "ui_gl.h"
 #include "ui_font.h"
 #include "rom_codec.h"
+#include "ui_box.h"
 #include "../rom_scan.h"
 #include "../settings.h"
 
@@ -375,6 +376,29 @@ unsigned int sbk_ui_rom_art_box_front(int game) {
     for (y = CH * 74 / 100; y < CH - band_h; y++) {
         int t = (y - CH * 74 / 100) * 255 / (CH - band_h - CH * 74 / 100 + 1);
         fill_rect(px, W, H, 0, y, CW, 1, 255, 255, 255, 25 + t * 160 / 255);
+    }
+
+    /* A picture the user drew wins over the game's own logo: it is already
+     * the size of the front, so it is the front (tools/gen_box.py). */
+    {
+        const unsigned char *drawn = NULL;
+        const struct SbkGameEntry *g = sbk_game_at(game);
+#ifdef SBK_BOX_HAVE_SBK1
+        if (g != NULL && strcmp(g->id, "sbk1") == 0) drawn = sbk_box_sbk1_rgba;
+#endif
+#ifdef SBK_BOX_HAVE_SBK2
+        if (g != NULL && strcmp(g->id, "sbk2") == 0) drawn = sbk_box_sbk2_rgba;
+#endif
+        if (drawn != NULL) {
+            int j;
+            for (j = 0; j < CH; j++) {
+                memcpy(px + (size_t)j * W * 4, drawn + (size_t)j * CW * 4, (size_t)CW * 4);
+            }
+            tex = upload_front(px);
+            free(px);
+            return tex;
+        }
+        (void)g;
     }
 
     if (a != NULL) {
