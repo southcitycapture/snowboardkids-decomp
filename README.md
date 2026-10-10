@@ -7,6 +7,23 @@ Snowboard Kids
 
 ![box art](Snowboard_Kids_Box.jpg)
 
+## PowerPC Mac port: complete
+
+The native port of Snowboard Kids to the **Power Mac G4** (Mac OS X 10.4 and 10.5 for
+PowerPC) is **complete**. It is not an emulator: the decompiled C code is
+compiled for the G4, and the code in `port/` stands in for the N64 hardware
+(graphics through OpenGL, sound, controllers).
+
+Snowboard Kids and Snowboard Kids 2 ship together as **Snowboard Kids 1+2
+PowerPC Edition**: two applications and a Read Me in one folder or `.dmg`.
+No ROM is included. You need your own cartridge dumps.
+
+The port lives on the
+[`ppc-port`](https://github.com/southcitycapture/snowboardkids-decomp/tree/ppc-port) branch.
+See [`port/README.md`](https://github.com/southcitycapture/snowboardkids-decomp/blob/ppc-port/port/README.md)
+there for how to install, play and build it.
+
+
 A matching decompilation of [Snowboard Kids](https://en.wikipedia.org/wiki/Snowboard_Kids) for Nintendo 64.
 
 **This repository does not contain any game assets or assembly whatsoever. An existing copy of the game is required. This project is not a port, to PC or any other platform. It takes a Nintendo 64 rom, extracts assets from it, and combines them with C code we reverse-engineered from the rom, to produce an identical rom. It is explicitly a non-goal for this project to be used for any commercial purpose.**
