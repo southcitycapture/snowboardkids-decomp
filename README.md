@@ -7,10 +7,10 @@ Snowboard Kids
 
 ![box art](Snowboard_Kids_Box.jpg)
 
-## PowerPC Mac port: complete
+## PowerPC Mac port: complete (1.0)
 
 The native port of Snowboard Kids to the **Power Mac G4** (Mac OS X 10.4 and 10.5 for
-PowerPC) is **complete**. It is not an emulator: the decompiled C code is
+PowerPC) is **complete**: version **1.0**. It is not an emulator: the decompiled C code is
 compiled for the G4, and the code in `port/` stands in for the N64 hardware
 (graphics through OpenGL, sound, controllers).
 
